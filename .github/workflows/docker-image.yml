@@ -1,0 +1,55 @@
+# 워크플로우의 이름
+name: CI/CD - Build and Push Docker Image
+
+# [중요] 워크플로우 실행 트리거(Trigger)
+# 'v'로 시작하는 태그(예: v1.0.0, v1.0.1)가 푸시될 때만 실행됩니다.
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+# 실행될 작업(Job) 정의
+jobs:
+  build-and-push:
+    # 작업이 실행될 환경 (Ubuntu 최신 버전)
+    runs-on: ubuntu-latest
+
+    # 작업 단계(Steps)
+    steps:
+      # 1. GitHub 저장소의 코드를 Runner(가상 머신)로 가져옵니다.
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      # 2. (선택사항) Git 태그 이름(예: v1.0.1)을 소문자로 변환
+      #    Docker 태그는 대소문자를 구분하므로, 소문자로 통일하는 것이 좋습니다.
+      - name: Set tag to lowercase
+        id: docker_meta_prep
+        run: echo "DOCKER_TAG_LC=$(echo ${{ github.ref_name }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      # 3. Docker Hub 로그인 (1단계, 2단계에서 등록한 Secrets 사용)
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 4. Docker 이미지 메타데이터 생성 (태그 자동화)
+      #    이 부분이 Git 태그(v1.0.1)를 Docker 이미지 태그(v1.0.1, latest)로 변환합니다.
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: demisoda/sec-telegram-bot  # [!!!] 본인 ID로 수정
+          tags: |
+            type=raw,value=${{ env.DOCKER_TAG_LC }}  # 예: v1.0.1
+            type=raw,value=latest,enable=true       # 항상 latest 태그도 함께 생성
+
+      # 5. Docker 이미지 빌드 및 Docker Hub로 푸시
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .                # Dockerfile이 있는 위치 (프로젝트 루트)
+          file: ./Dockerfile      # Dockerfile 경로
+          push: true                # true로 설정해야 푸시됩니다.
+          tags: ${{ steps.meta.outputs.tags }}    # 4번 스텝에서 생성된 태그 사용
+          labels: ${{ steps.meta.outputs.labels }}  # 4번 스텝에서 생성된 레이블 사용
