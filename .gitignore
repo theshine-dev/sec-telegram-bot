@@ -1,0 +1,29 @@
+# Python 가상환경
+venv/
+.venv/
+*.pyc
+__pycache__/
+
+# 민감한 환경변수 파일
+.env
+*.env
+.env.prod
+
+# 로컬 데이터 및 로그 (절대 이미지에 포함시키면 안 됨)
+data/
+logs/
+*.db
+*.log
+
+# Docker
+docker-compose.yml # (선택 사항: 민감 정보가 없다면 포함)
+
+# IDE 및 OS 파일
+.idea/
+.vscode/
+.DS_Store
+
+# 기타 포함
+test.py
+sample/
+*.tar

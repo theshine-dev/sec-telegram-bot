@@ -1,0 +1,28 @@
+# .dockerignore
+
+# Python 가상 환경
+.venv/
+venv/
+
+# Python 캐시
+__pycache__/
+*.pyc
+
+# 로컬 데이터 및 로그 (절대 이미지에 포함시키면 안 됨)
+data/
+logs/
+*.db
+*.log
+
+# IDE 및 Git 설정
+.idea/
+.vscode/
+.git/
+.gitignore
+
+
+# 기타 포함
+test.py
+.env
+sample/
+*.tar
