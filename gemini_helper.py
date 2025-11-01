@@ -13,46 +13,6 @@ genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 model = genai.GenerativeModel('gemini-pro-latest')
 
 
-def get_objective_summary(filing_text):
-    """Gemini를 사용하여 공시 내용의 객관적인 정보를 요약합니다."""
-    prompt = f"""
-    Please act as a financial data extractor.
-    Based on the following SEC filing text, summarize the key objective information.
-    Focus ONLY on the facts and numbers presented in the document such as financial results (revenue, net income, EPS), key business updates, and segment performance.
-    Do not include any opinions, interpretations, or predictions.
-    Present the summary in clear, concise bullet points in Korean.
-
-    --- FILING TEXT ---
-    {filing_text}
-    """
-    try:
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        return f"Gemini 요약 중 오류 발생: {e}"
-
-def get_investment_insight(filing_text, ticker):
-    """Gemini를 사용하여 공시 내용에 대한 투자 인사이트를 제공합니다."""
-    prompt = f"""
-    You are an experienced investment analyst providing insights for a retail investor.
-    Analyze the following SEC filing for the company with ticker "{ticker}".
-    Based on the filing and your general knowledge of the market, industry trends, and macroeconomic factors, provide an analysis on what this filing implies for the company's future.
-
-    Please structure your analysis in Korean as follows:
-    1.  **공시 핵심 요약:** (1-2 문장으로 공시의 가장 중요한 내용을 요약)
-    2.  **긍정적 시그널:** (이 공시 내용이 회사에 긍정적인 이유와 잠재적 주가 상승 요인 분석)
-    3.  **잠재적 리스크:** (공시에서 드러난 우려 사항이나 투자자가 주의해야 할 리스크 분석)
-    4.  **종합 의견:** (개인 투자자가 이 공시를 바탕으로 어떤 의사결정을 내리면 좋을지에 대한 종합적인 조언)
-    --- FILING TEXT ---
-    {filing_text}
-    """
-    try:
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        return f"Gemini 분석 중 오류 발생: {e}"
-
-
 def get_comprehensive_analysis(filing_text, ticker):
     """
     Gemini API를 한 번만 호출하여 객관적 요약과 투자 분석을 모두 가져옵니다.

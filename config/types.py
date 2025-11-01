@@ -37,16 +37,6 @@ class FilingInfo:
     status: str
     gemini_analysis: Optional[dict] = None
 
-    # def __init__(self, accession_number: str, ticker: str, filing_type: FilingType, filing_url: str, status: AnalysisStatus,
-    #              gemini_summary: Optional[str] = None, gemini_insight: Optional[str] = None, gemini_point: Optional[str] = None):
-    #     self.accession_number = accession_number
-    #     self.ticker = ticker
-    #     self.filing_type = filing_type
-    #     self.filing_url = filing_url
-    #     self.status = status
-    #     self.gemini_summary = gemini_summary
-    #     self.gemini_insight = gemini_insight
-    #     self.gemini_point = gemini_point
 
     def as_dict(self):
         return {

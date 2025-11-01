@@ -10,11 +10,6 @@ from config.types import FilingInfo
 async def send_filing_notification_to_users(filing_info: FilingInfo):
     bot = Bot(token=os.getenv("TELEGRAM_BOT_TOKEN"))
 
-    # msg = (f"<{filing_info.ticker}> 새로운 공시 발견 !!"
-    #        f"3줄 요약 : {filing_info.gemini_point}"
-    #        f"내용 : {filing_info.gemini_summary}"
-    #        f"AI 인사이트 : {filing_info.gemini_summary}"
-    #        )
     gemini_analysis = filing_info.gemini_analysis
 
     msg = f"🔔 <b>{filing_info.ticker} 신규 공시 ({filing_info.filing_type})</b> 🔔\n\n"

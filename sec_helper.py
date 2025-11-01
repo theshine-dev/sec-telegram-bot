@@ -3,7 +3,6 @@ import logging
 
 import requests
 from bs4 import BeautifulSoup
-from enum import Enum
 
 from config import config
 from config.types import FilingType
