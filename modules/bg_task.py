@@ -76,9 +76,8 @@ async def process_analysis_queue():
     await db_manager.update_quota_count(new_count, datetime.now(timezone.utc))
     logger.info(f"[Analyzer] API 할당량 사용: {len(jobs)}건 (오늘 총 {new_count}/50 건)")
 
-
+    logger.info(f"[Analyzer] {len(jobs)} 개의 처리할 작업을 가져왔습니다.")
     for job in jobs:
-        logger.info(f"[Analyzer] {len(jobs)} 개의 처리할 작업을 가져왔습니다.")
         try:
             # 2. Gemini 분석 수행
             filing_text = await sec_helper.get_filing_text(job.filing_url)
