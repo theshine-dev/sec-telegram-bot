@@ -33,7 +33,7 @@ async def send_filing_notification_to_users(filing_info: FilingInfo):
 
     msg += f'🔗 <a href="{filing_info.filing_url}">공시 원문 보기</a>'
 
-    users_id = db_manager.get_users_for_ticker(filing_info.ticker)
+    users_id = await db_manager.get_users_for_ticker(filing_info.ticker)
     for user_id in users_id:
         await bot.send_message(chat_id=user_id, text=msg, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 

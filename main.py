@@ -1,3 +1,5 @@
+import sys
+
 from dotenv import load_dotenv
 import os
 import logging
@@ -36,7 +38,7 @@ async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"'{ticker}'는 SEC 데이터베이스에 존재하지 않는 티커입니다. 오타를 확인해주세요.")
             return
 
-        db_manager.add_subscription(update.message.chat_id, ticker)
+        await db_manager.add_subscription(update.message.chat_id, ticker)
         await update.message.reply_text(f"{ticker} 구독을 추가했습니다.")
     except IndexError:
         await update.message.reply_text("사용법: /sub <티커>")
@@ -47,7 +49,7 @@ async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         ticker = context.args[0].upper()
 
-        db_manager.remove_subscription(update.message.chat_id, ticker)
+        await db_manager.remove_subscription(update.message.chat_id, ticker)
         await update.message.reply_text(f"{ticker} 구독을 취소했습니다.")
     except IndexError:
         await update.message.reply_text("사용법: /unsub <티커>")
@@ -55,7 +57,7 @@ async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def sub_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/list"""
-    tickers = db_manager.get_subscribed_tickers_for_user(update.message.chat_id)
+    tickers = await db_manager.get_subscribed_tickers_for_user(update.message.chat_id)
     if tickers:
         await update.message.reply_text(f"구독 목록 : {', '.join(tickers)}")
     else:
@@ -64,9 +66,13 @@ async def sub_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def post_init(app: Application):
     """
-    봇이 시작된 직후, 폴링을 시작하기 전에 실행되는 비동기 함수입니다.
-    봇의 '준비' 상태를 알리고 초기 백그라운드 작업을 트리거하기에 완벽한 위치입니다.
-    """
+        봇이 시작된 직후, 폴링을 시작하기 전에 실행됩니다.
+        DB 풀 초기화, 스케줄러 시작, 초기 백그라운드 작업 트리가
+        """
+    # DB 풀, 스키마 초기화
+    await db_manager.init_db_pool()
+    await db_manager.setup_database()
+
     # 봇이 시작하자마자 티커 목록 업데이트를 '백그라운드에서' 즉시 실행
     # create_task는 이 작업이 끝나는 것을 기다리지 않고 바로 다음으로 넘어갑니다.
     asyncio.create_task(ticker_validator.update_ticker_list())
@@ -79,9 +85,22 @@ async def post_init(app: Application):
         logger.critical(f"[스케줄러] 초기 티커 갱신 작업 등록 실패(APScheduler) : {e}")
 
 
+async def on_shutdown(app: Application):
+    """봇 종료 직전에 DB 풀을 닫습니다."""
+    logger.info("[종료] 봇 종료 시작... DB 풀을 닫습니다.")
+    await db_manager.close_db_pool()
+
+    scheduler = app.bot_data.get('scheduler')
+    if scheduler and scheduler.running:
+        scheduler.shutdown()
+        logger.info("[종료] 스케줄러 종료됨.")
+
+
 def main():
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
     setup_logging()  # Applying Custom Logging Config
-    db_manager.setup_database()  # Initializing DB
 
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if not token:
@@ -89,7 +108,12 @@ def main():
         raise ValueError("Please, Set a 'TELEGRAM_BOT_TOKEN' environment variable!!")
 
     # --- Application 빌더에 post_init 훅 추가 ---
-    application = Application.builder().token(token).post_init(post_init).build()
+    application = (Application.builder()
+                   .token(token)
+                   .post_init(post_init)
+                   .post_shutdown(on_shutdown)
+                   .build()
+                   )
 
     scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
 
@@ -104,13 +128,13 @@ def main():
     scheduler.add_job(
         discover_new_filings,
         'interval',
-        minutes=15,
+        minutes=1,
         id='discover_new_filings'
     )
     scheduler.add_job(
         process_analysis_queue,
         'interval',
-        seconds=90,
+        seconds=80,
         id='process_analysis_queue',
         max_instances=1,  # 인스턴스 1개로 강제
         coalesce=True,  # 병합 처리(딜레이된 작업 누적 처리 방지)
