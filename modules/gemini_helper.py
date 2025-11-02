@@ -1,16 +1,15 @@
 import asyncio
 import logging
-import os
 import json
 import re
 
 import google.generativeai as genai
-from dotenv import load_dotenv
+
+from configs.config import GEMINI_API_KEY
 
 logger = logging.getLogger(__name__)
 
-load_dotenv()
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-pro-latest')
 
 

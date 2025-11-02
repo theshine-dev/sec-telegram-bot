@@ -1,15 +1,13 @@
-import os
-
 from telegram import Bot
 from telegram.constants import ParseMode
 
 from . import db_manager
-
+from configs.config import TELEGRAM_BOT_TOKEN
 from configs.types import FilingInfo
 
 
 async def send_filing_notification_to_users(filing_info: FilingInfo):
-    bot = Bot(token=os.getenv("TELEGRAM_BOT_TOKEN"))
+    bot = Bot(token=TELEGRAM_BOT_TOKEN)
 
     gemini_analysis = filing_info.gemini_analysis
 

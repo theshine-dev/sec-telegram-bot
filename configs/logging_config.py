@@ -2,12 +2,8 @@
 import os
 import logging.config
 
-from dotenv import load_dotenv
+from configs.config import LOG_DIR, GLOBAL_LOG_LEVEL
 
-from configs.config import LOG_DIR
-
-load_dotenv(dotenv_path='../.env')
-GLOBAL_LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO').upper()
 
 LOGGING_CONFIG = {
     'version': 1,

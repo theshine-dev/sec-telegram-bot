@@ -11,9 +11,10 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 # 내부 헬퍼 모듈 임포트
 from modules import db_manager, ticker_validator
 from modules.bg_task import discover_new_filings, process_analysis_queue
-from configs.logging_config import setup_logging
 
-load_dotenv()
+from configs.logging_config import setup_logging
+from configs import config
+
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +102,7 @@ def main():
 
     setup_logging()  # Applying Custom Logging Config
 
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    token = config.TELEGRAM_BOT_TOKEN
     if not token:
         logger.critical(f"[설정] 'TELEGRAM_BOT_TOKEN' 환경변수 체크 필요")
         raise ValueError("Please, Set a 'TELEGRAM_BOT_TOKEN' environment variable!!")
@@ -120,20 +121,20 @@ def main():
     scheduler.add_job(
         ticker_validator.update_ticker_list,
         'interval',
-        hours=24,
+        hours=config.UPDATE_TICKER_INTERVAL_HOURS,
         id='daily_ticker_update',
         max_instances=1,
     )
     scheduler.add_job(
         discover_new_filings,
         'interval',
-        minutes=1,
+        seconds=config.DISCOVER_INTERVAL_SECONDS,
         id='discover_new_filings'
     )
     scheduler.add_job(
         process_analysis_queue,
         'interval',
-        seconds=80,
+        seconds=config.ANALYSIS_INTERVAL_SECONDS,
         id='process_analysis_queue',
         max_instances=1,  # 인스턴스 1개로 강제
         coalesce=True,  # 병합 처리(딜레이된 작업 누적 처리 방지)

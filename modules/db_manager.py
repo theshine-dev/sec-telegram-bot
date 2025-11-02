@@ -1,9 +1,7 @@
 # db_manager.py (PostgreSQL용 전체 코드)
 import json
 import logging
-import os
 import datetime
-import asyncio
 from contextlib import asynccontextmanager # <-- 변경
 
 import psycopg # <-- 변경

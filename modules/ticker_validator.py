@@ -1,6 +1,5 @@
 # ticker_validator.py
 import logging
-
 import requests
 import json
 import os

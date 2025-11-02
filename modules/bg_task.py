@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 import logging
 
+from configs import config
 from .telegram_helper import send_filing_notification_to_users
 from . import db_manager, gemini_helper, sec_helper, ticker_validator
 
@@ -119,12 +120,13 @@ async def calc_current_quota_status() -> tuple[int, int]:
         current_count = 0
 
     # 2-3. (핵심) 일일 할당량을 초과했는지 검사합니다.
-    if current_count >= 50:
-        return 50, 0
+    daily_limit = config.GEMINI_DAILY_LIMIT
+    if current_count >= daily_limit:
+        return daily_limit, 0
 
     # --- 3. 처리할 작업 개수 계산 (RPM + RPD) ---
-    remaining_today = 50 - current_count  # 오늘 남은 횟수 (예: 3)
-    rpm_limit = 2  # 1분에 처리할 횟수
+    remaining_today = daily_limit - current_count  # 오늘 남은 횟수 (예: 3)
+    rpm_limit = config.GEMINI_RPM_LIMIT  # 1분에 처리할 횟수
 
     # 오늘 남은 횟수와 분당 횟수 중 '더 적은 값'을 선택
     return current_count, min(rpm_limit, remaining_today)
