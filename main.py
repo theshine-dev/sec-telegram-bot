@@ -119,7 +119,7 @@ def main():
     application.bot_data['scheduler'] = scheduler
 
     # 명령어 핸들러 등록
-    application.add_handler(CommandHandler("strat", start))
+    application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("sub", subscribe))
     application.add_handler(CommandHandler("unsub", unsubscribe))
     application.add_handler(CommandHandler("list", sub_list))
