@@ -25,4 +25,5 @@ logs/
 test.py
 .env
 sample/
+dev/
 *.tar

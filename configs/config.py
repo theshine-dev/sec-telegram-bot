@@ -1,4 +1,4 @@
-# config.py
+# configs.py
 
 from pathlib import Path
 

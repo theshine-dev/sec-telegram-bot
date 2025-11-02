@@ -3,8 +3,9 @@ import os
 from telegram import Bot
 from telegram.constants import ParseMode
 
-import db_manager
-from config.types import FilingInfo
+from . import db_manager
+
+from configs.types import FilingInfo
 
 
 async def send_filing_notification_to_users(filing_info: FilingInfo):

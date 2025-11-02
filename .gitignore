@@ -26,4 +26,5 @@ docker-compose.yml # (선택 사항: 민감 정보가 없다면 포함)
 # 기타 포함
 test.py
 sample/
+dev/
 *.tar

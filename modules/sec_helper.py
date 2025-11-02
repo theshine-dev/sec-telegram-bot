@@ -4,8 +4,8 @@ import logging
 import requests
 from bs4 import BeautifulSoup
 
-from config import config
-from config.types import FilingType
+from configs import config
+from configs.types import FilingType
 
 logger = logging.getLogger(__name__)
 

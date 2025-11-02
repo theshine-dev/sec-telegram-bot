@@ -7,7 +7,7 @@ import os
 import time
 import asyncio
 
-from config import config
+from configs import config
 
 logger = logging.getLogger(__name__)
 

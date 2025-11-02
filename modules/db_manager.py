@@ -6,8 +6,8 @@ import sqlite3
 import datetime
 from contextlib import contextmanager
 
-from config import config
-from config.types import FilingInfo, AnalysisStatus
+from configs import config
+from configs.types import FilingInfo, AnalysisStatus
 
 logger = logging.getLogger(__name__)
 
