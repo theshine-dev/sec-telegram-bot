@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import json
@@ -13,7 +14,7 @@ genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 model = genai.GenerativeModel('gemini-pro-latest')
 
 
-def get_comprehensive_analysis(filing_text, ticker):
+async def get_comprehensive_analysis(filing_text, ticker):
     """
     Gemini API를 한 번만 호출하여 객관적 요약과 투자 분석을 모두 가져옵니다.
     """
@@ -33,7 +34,13 @@ def get_comprehensive_analysis(filing_text, ticker):
     """
     try:
         generation_config = genai.types.GenerationConfig(response_mime_type="application/json")
-        response = model.generate_content(prompt, generation_config=generation_config)
+
+        loop = asyncio.get_running_loop()
+
+        response = await loop.run_in_executor(
+            None,
+            lambda: model.generate_content(prompt, generation_config=generation_config)
+        )
 
         raw_text = response.text
 
@@ -55,4 +62,4 @@ def get_comprehensive_analysis(filing_text, ticker):
 
     except Exception as e:
         logger.error(f"[Gemini] Gemini JSON 분석 실패 ({ticker}): {e}", exc_info=True)
-
+        raise e

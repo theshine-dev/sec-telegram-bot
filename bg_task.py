@@ -85,7 +85,7 @@ async def process_analysis_queue():
         try:
             # 2. Gemini 분석 수행
             filing_text = await sec_helper.get_filing_text(job.filing_url)
-            analysis_result = gemini_helper.get_comprehensive_analysis(filing_text, job.ticker,)
+            analysis_result = await gemini_helper.get_comprehensive_analysis(filing_text, job.ticker,)
 
             job.update_gemini_analysis(analysis_result)
             job.update_status(AnalysisStatus.COMPLETED.value)
