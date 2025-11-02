@@ -4,9 +4,9 @@ import logging.config
 
 from dotenv import load_dotenv
 
-from config.config import LOG_DIR
+from configs.config import LOG_DIR
 
-load_dotenv()
+load_dotenv(dotenv_path='../.env')
 GLOBAL_LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO').upper()
 
 LOGGING_CONFIG = {
@@ -72,39 +72,47 @@ LOGGING_CONFIG = {
             'formatter': 'default',
             'encoding': 'utf-8',
         },
+        'gemini_file_handler': {
+            'level': GLOBAL_LOG_LEVEL,
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOG_DIR / 'gemini_request.log',
+            'maxBytes': 5242880,  # 5MB
+            'backupCount': 3,
+            'formatter': 'default',
+            'encoding': 'utf-8',
+        },
     },
 
     # 로거(Logger) 정의: 누가, 어떤 핸들러를 사용할 것인가?
     'loggers': {
         # __name__이 'db_manager'인 경우
-        'db_manager': {
+        'modules.db_manager': {
             'level': GLOBAL_LOG_LEVEL,
             'handlers': ['console', 'db_file_handler'],
             'propagate': False,  # 부모(root)로 로그 전파 차단
         },
         # __name__이 'sec_helper' 또는 'ticker_validator'인 경우
-        'sec_helper': {
+        'modules.sec_helper': {
             'level': GLOBAL_LOG_LEVEL,
             'handlers': ['console', 'sec_file_handler'],
             'propagate': False,
         },
-        'ticker_validator': {
+        'modules.ticker_validator': {
             'level': GLOBAL_LOG_LEVEL,
             'handlers': ['console', 'sec_file_handler'],
             'propagate': False,
         },
-        'bg_task': {
+        'modules.bg_task': {
             'level': GLOBAL_LOG_LEVEL,
             'handlers': ['console', 'background_file_handler'],
             'propagate': False,
         },
-        # __name__이 'main' 또는 'gemini_helper'인 경우
-        'main': {
+        'modules.gemini_helper': {
             'level': GLOBAL_LOG_LEVEL,
-            'handlers': ['console', 'bot_file_handler'],
+            'handlers': ['console', 'gemini_file_handler'],
             'propagate': False,
         },
-        'gemini_helper': {
+        'main': {
             'level': GLOBAL_LOG_LEVEL,
             'handlers': ['console', 'bot_file_handler'],
             'propagate': False,
@@ -136,7 +144,7 @@ LOGGING_CONFIG = {
 
 def setup_logging():
     """
-    config.py의 LOGGING_CONFIG 딕셔너리를 기반으로
+    configs.py의 LOGGING_CONFIG 딕셔너리를 기반으로
     로깅 시스템을 설정하고 폴더를 생성합니다.
     """
     # 로그 디렉토리 생성

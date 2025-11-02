@@ -2,14 +2,10 @@
 from datetime import datetime, timezone
 import logging
 
-from telegram_helper import send_filing_notification_to_users
+from .telegram_helper import send_filing_notification_to_users
+from . import db_manager, gemini_helper, sec_helper, ticker_validator
 
-import db_manager
-import gemini_helper
-import sec_helper
-import ticker_validator
-
-from config.types import AnalysisStatus, FilingInfo
+from configs.types import AnalysisStatus, FilingInfo
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +81,7 @@ async def process_analysis_queue():
         try:
             # 2. Gemini 분석 수행
             filing_text = await sec_helper.get_filing_text(job.filing_url)
-            analysis_result = await gemini_helper.get_comprehensive_analysis(filing_text, job.ticker,)
+            analysis_result = await gemini_helper.get_comprehensive_analysis(filing_text, job.ticker, )
 
             job.update_gemini_analysis(analysis_result)
             job.update_status(AnalysisStatus.COMPLETED.value)

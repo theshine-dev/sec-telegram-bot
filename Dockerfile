@@ -12,7 +12,7 @@ COPY requirements.txt .
 # 부품 목록을 보고 모든 라이브러리 설치
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 4. 코드 복사: 현재 폴더(.)의 모든 코드(.py, config.py 등)를
+# 4. 코드 복사: 현재 폴더(.)의 모든 코드(.py, configs.py 등)를
 # 컨테이너 안의 /app 폴더로 복사
 COPY . .
 

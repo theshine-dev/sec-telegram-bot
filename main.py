@@ -9,10 +9,9 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # 내부 헬퍼 모듈 임포트
-import db_manager
-import ticker_validator
-from bg_task import discover_new_filings, process_analysis_queue
-from config.logging_config import setup_logging
+from modules import db_manager, ticker_validator
+from modules.bg_task import discover_new_filings, process_analysis_queue
+from configs.logging_config import setup_logging
 
 load_dotenv()
 

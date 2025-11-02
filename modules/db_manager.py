@@ -10,8 +10,8 @@ import psycopg # <-- 변경
 from psycopg.rows import dict_row # <-- 딕셔너리 반환용
 from psycopg_pool import AsyncConnectionPool # <-- 비동기 커넥션 풀
 
-from config import config
-from config.types import FilingInfo, AnalysisStatus
+from configs import config
+from configs.types import FilingInfo, AnalysisStatus
 
 logger = logging.getLogger(__name__)
 
