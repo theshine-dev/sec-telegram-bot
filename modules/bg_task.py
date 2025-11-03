@@ -33,7 +33,7 @@ async def discover_new_filings():
             new_filings_to_process.append(filing)
 
         if new_filings_to_process:
-            new_filings_to_process = new_filings_to_process[:5]
+            new_filings_to_process = new_filings_to_process[:config.DISCOVER_FILING_AMOUNT]
             logger.info(f"[Discover] {ticker}에서 {len(new_filings_to_process)}개의 새로운 공시 발견.")
             for new_filing in reversed(new_filings_to_process): # 오래된 공시부터 DB 삽입
                 # 2. 'analysis_queue' 테이블에 'pending' 상태로 삽입 (UPSERT 사용)

@@ -23,17 +23,19 @@ GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY", "AIzaSyAZKUzsQtV2gfhMmC1hDwG8_8E
 # DB
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-# Scheduler Interval
+# Scheduler Interval, etc.
 UPDATE_TICKER_INTERVAL_HOURS = int(os.environ.get("UPDATE_TICKER_INTERVAL_HOURS", 24))
 DISCOVER_INTERVAL_SECONDS = int(os.environ.get("DISCOVER_INTERVAL_SECONDS", 300))
 ANALYSIS_INTERVAL_SECONDS = int(os.environ.get("ANALYSIS_INTERVAL_SECONDS", 80))
+
+DISCOVER_FILING_AMOUNT = int(os.environ.get("DISCOVER_FILING_AMOUNT", 3))
 
 # Gemini Quota
 GEMINI_RPM_LIMIT = int(os.environ.get("GEMINI_RPM_LIMIT", 2))
 GEMINI_DAILY_LIMIT = int(os.environ.get("GEMINI_DAILY_LIMIT", 50))
 GEMINI_QUOTA_TIMEZONE = os.environ.get("GEMINI_QUOTA_TIMEZONE", "America/Los_Angeles")
 
-# --- (핵심) 로그 레벨 ---
+# Logging
 GLOBAL_LOG_LEVEL = os.environ.get("GLOBAL_LOG_LEVEL", "INFO").upper()
 
 # Constant
