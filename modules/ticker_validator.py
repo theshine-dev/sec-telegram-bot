@@ -23,7 +23,7 @@ def _update_ticker_list():
                 return
 
         logger.info("백그라운드: 새로운 티커 목록을 SEC에서 다운로드 중...")
-        response = requests.get(config.SEC_TICKER_URL, headers=config.SEC_HEADERS)
+        response = requests.get(config.SEC_TICKER_URL, headers=config.SEC_TICKER_HEADER)
         response.raise_for_status()
         raw_data = response.json()
 

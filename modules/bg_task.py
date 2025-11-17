@@ -3,12 +3,67 @@ from datetime import datetime, timezone
 import logging
 
 from configs import config
-from .telegram_helper import send_filing_notification_to_users
-from . import db_manager, gemini_helper, sec_helper, ticker_validator
+from modules.telegram_helper import send_filing_notification_to_users
+from modules import db_manager, gemini_helper, ticker_validator, sec_parser
 
 from configs.types import AnalysisStatus, FilingInfo
 
 logger = logging.getLogger(__name__)
+
+
+async def _process_single_job(job: FilingInfo):
+    """
+    Helper function for processing a single analysis job.
+    Args:
+        job:
+
+    Returns:
+
+    """
+    try:
+        logger.info(f"[Analyzer] 작업 시작: {job.ticker} - {job.accession_number} (시도 {job.retry_count + 1}회)")
+
+        # 1. (수정) sec_parser로 공시 데이터 "추출"
+        extracted_data = await sec_parser.extract_filing_data(job)
+        if not extracted_data:
+            raise ValueError("공시에서 유의미한 데이터를 추출하지 못했습니다.")
+
+        # 2. (수정) 추출된 데이터를 Gemini로 "분석"
+        analysis_result = await gemini_helper.get_comprehensive_analysis(
+            extracted_data,
+            job.ticker,
+            job.filing_type
+        )
+        if not analysis_result:
+            raise ValueError("Gemini API 분석에 실패했거나 결과가 비어있습니다.")
+
+        job.update_gemini_analysis(analysis_result)
+        job.update_status(AnalysisStatus.COMPLETED.value)
+
+        # 3. 분석 성공 (이하 동일)
+        await db_manager.insert_analysis_archive(job)
+        await send_filing_notification_to_users(job)
+        await db_manager.remove_analysis_queue(job)
+        logger.info(f"[Analyzer] {job.ticker} - {job.accession_number} 공시 분석 완료 및 사용자 발송 완료.")
+
+
+    except Exception as e:
+        logger.error(f"[Analyzer] {job.ticker} - {job.accession_number} 처리 실패: {e}")
+"""
+        # (핵심) 3. 실패 시, 재시도 횟수 증가 및 상태 업데이트
+        job.retry_count += 1
+        if job.retry_count >= config.MAX_RETRY_LIMIT:
+            # 최대 재시도 횟수 도달 시 '영구 실패'
+            job.update_status(AnalysisStatus.PERMANENT_FAIL.value)
+            logger.warning(
+                f"[Analyzer] {job.ticker} - {job.accession_number} 최대 재시도({config.MAX_RETRY_LIMIT}) 횟수 도달. 영구 실패로 처리.")
+        else:
+            # 아닐 경우 '실패' (다음 재시도 대기)
+            job.update_status(AnalysisStatus.FAILED.value)
+
+        await db_manager.update_analysis_queue(job)
+"""
+
 
 async def discover_new_filings():
     """
@@ -24,7 +79,7 @@ async def discover_new_filings():
         # 1. get last filing info
         last_accession_num = await db_manager.get_last_accession_number(ticker)
 
-        filings_list = await sec_helper.get_recent_filings_list(cik)  # "accession_number", "form_type", "filing_url"
+        filings_list = await sec_parser.get_recent_filings_list(cik)  # "accession_number", "form_type", "filing_url"
         new_filings_to_process = []
         for filing in filings_list:
             if filing['accession_number'] == last_accession_num:
@@ -41,8 +96,9 @@ async def discover_new_filings():
                     accession_number=new_filing['accession_number'],
                     ticker=ticker,
                     filing_type=new_filing['form_type'],
+                    filing_date=new_filing['filing_date'],
                     filing_url=new_filing['filing_url'],
-                    status=AnalysisStatus.PENDING.value
+                    status=AnalysisStatus.PENDING.value,
                 ))
 
             # 3. 'latest_filings' 테이블의 기준 ID를 가장 최신 공시로 업데이트
@@ -50,6 +106,7 @@ async def discover_new_filings():
                 accession_number=new_filings_to_process[0]['accession_number'],
                 ticker=ticker,
                 filing_type=new_filings_to_process[0]['form_type'],
+                filing_date=new_filings_to_process[0]['filing_date'],
                 filing_url=new_filings_to_process[0]['filing_url'],
                 status=AnalysisStatus.PENDING.value
                 )
@@ -72,31 +129,14 @@ async def process_analysis_queue():
         logger.info("[Analyzer] 처리할 작업이 없습니다.")
         return
 
+    # 수정 필요 -> job 처리 중 실패한 부분도 할당량에 반영되는 오류
     new_count = current_count + len(jobs)
     await db_manager.update_quota_count(new_count, datetime.now(timezone.utc))
     logger.info(f"[Analyzer] API 할당량 사용: {len(jobs)}건 (오늘 총 {new_count}/50 건)")
 
     logger.info(f"[Analyzer] {len(jobs)} 개의 처리할 작업을 가져왔습니다.")
     for job in jobs:
-        try:
-            # 2. Gemini 분석 수행
-            filing_text = await sec_helper.get_filing_text(job.filing_url)
-            analysis_result = await gemini_helper.get_comprehensive_analysis(filing_text, job.ticker, )
-
-            job.update_gemini_analysis(analysis_result)
-            job.update_status(AnalysisStatus.COMPLETED.value)
-
-            # 3. 분석 성공 시, 아카이브 DB에 기록, 사용자에게 전송, queue 삭제
-            await db_manager.insert_analysis_archive(job)
-            await send_filing_notification_to_users(job)
-            await db_manager.remove_analysis_queue(job)
-            logger.info(f"[Analyzer] {job.ticker} - {job.accession_number} 공시 분석 완료 및 사용자 발송 완료.")
-
-        except Exception as e:
-            logger.error(f"[Analyzer] {job.ticker} - {job.accession_number} 처리 실패: {e}")
-            # 4. 실패 시, 상태를 'FAILED'로 변경 (재시도 로직 고려 필요)
-            job.update_status(AnalysisStatus.FAILED.value)
-            await db_manager.update_analysis_queue(job)
+        await _process_single_job(job)
 
 
 async def calc_current_quota_status() -> tuple[int, int]:

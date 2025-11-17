@@ -1,7 +1,7 @@
 from telegram import Bot
 from telegram.constants import ParseMode
 
-from . import db_manager
+from modules import db_manager
 from configs.config import TELEGRAM_BOT_TOKEN
 from configs.types import FilingInfo
 

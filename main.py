@@ -9,7 +9,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # 내부 헬퍼 모듈 임포트
-from modules import db_manager, ticker_validator
+from modules import db_manager, ticker_validator, sec_parser
 from modules.bg_task import discover_new_filings, process_analysis_queue
 
 from configs.logging_config import setup_logging
@@ -73,8 +73,10 @@ async def post_init(app: Application):
     await db_manager.init_db_pool()
     await db_manager.setup_database()
 
-    # 봇이 시작하자마자 티커 목록 업데이트를 '백그라운드에서' 즉시 실행
-    # create_task는 이 작업이 끝나는 것을 기다리지 않고 바로 다음으로 넘어갑니다.
+    # SEC Parse 초기화
+    await sec_parser.init_parser()
+
+    # 최초 티커목록 갱신 백그라운드 작업 실행
     asyncio.create_task(ticker_validator.update_ticker_list())
 
     try:
@@ -97,6 +99,7 @@ async def on_shutdown(app: Application):
 
 
 def main():
+    # 윈도우 개발 환경용
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
