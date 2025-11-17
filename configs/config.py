@@ -18,7 +18,7 @@ PROCESSED_TICKER_FILE_PATH = DATA_DIR / "tickers.json"
 # Token, CHAT ID
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID","6939053311")    # 본인의 chat_id
-GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY", "AIzaSyAZKUzsQtV2gfhMmC1hDwG8_8EwNHR7ZQE")
+GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY")
 
 # DB
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -39,5 +39,6 @@ GEMINI_QUOTA_TIMEZONE = os.environ.get("GEMINI_QUOTA_TIMEZONE", "America/Los_Ang
 GLOBAL_LOG_LEVEL = os.environ.get("GLOBAL_LOG_LEVEL", "INFO").upper()
 
 # Constant
-SEC_HEADERS = {'User-Agent': 'Smile Always admin@smile-always.me'}  # type: 'dict'
+SEC_USER_AGENT = "admin@smile-always.me"
+SEC_TICKER_HEADER = {'User-Agent': 'Smile Always admin@smile-always.me'}  # type: 'dict'
 SEC_TICKER_URL = "https://www.sec.gov/files/company_tickers.json"

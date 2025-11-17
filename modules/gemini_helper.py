@@ -6,6 +6,7 @@ import re
 import google.generativeai as genai
 
 from configs.config import GEMINI_API_KEY
+from configs.types import ExtractedFilingData
 
 logger = logging.getLogger(__name__)
 
@@ -14,29 +15,87 @@ model = genai.GenerativeModel('gemini-2.5-flash')
 
 
 
-async def get_comprehensive_analysis(filing_text, ticker):
+def _build_prompt(data: ExtractedFilingData, ticker: str, filing_type: str) -> str:
     """
-    Gemini API를 한 번만 호출하여 객관적 요약과 투자 분석을 모두 가져옵니다.
+    Return proper prompt using
+    Args:
+        data:
+        ticker:
+        filing_type:
+
+    Returns:
+
     """
-    # Gemini에게 두 가지 작업을 동시에 요청하는 통합 프롬프트
-    prompt = f"""
-        You are an expert financial analyst. Analyze the following SEC filing for "{ticker}".
-        Provide your entire response as a single, minified JSON object. Do not include markdown or any text outside the JSON.
-        The JSON object must have the following keys:
-        
-        - "executive_summary": A 3-sentence summary (in Korean) of the most critical information for an investor.
-        - "objective_facts": A list of key bullet points (as strings, in Korean) based *only* on the text (e.g., revenue, net income, key events).
-        - "positive_signals": A brief analysis (in Korean) of positive implications.
-        - "potential_risks": A brief analysis (in Korean) of potential risks and concerns.
-        - "overall_opinion": A final concluding remark (in Korean).
-        --- FILING TEXT ---
-        {filing_text}
+    if filing_type in ["10-K", "10-Q"]:
+        # 10-K / 10-Q 용 하이브리드 프롬프트
+
+        # 1. 재무 데이터 (숫자)
+        financial_summary = "N/A"
+        if data.financial_data:
+            financial_summary = (
+                f"- Revenue: {data.financial_data.get('Revenue', 'N/A')}\n"
+                f"- Net Income: {data.financial_data.get('NetIncome', 'N/A')}"
+            )
+
+        # 2. 경영진 분석 (텍스트)
+        mda_summary = data.mda_text or "N/A"
+
+        # 3. 위험 요소 (텍스트)
+        risk_summary = data.risk_factors_text or "N/A"
+
+        prompt = f"""
+            You are an expert financial analyst. Analyze the {filing_type} filing for "{ticker}" based on the following extracted data.
+            Provide your entire response as a single, minified JSON object.
+
+            --- 1. Key Financial Data (From Item 8) ---
+            {financial_summary}
+
+            --- 2. Management's Discussion & Analysis (From Item 7) ---
+            {mda_summary} 
+
+            --- 3. Risk Factors (From Item 1A) ---
+            {risk_summary}
+
+            Based *only* on the 3 sections above, analyze and respond in JSON (Korean):
+
+            - "executive_summary": A 3-sentence summary (in Korean) combining the financial data and management's discussion.
+            - "objective_facts": Key numbers (from Section 1) and key facts (from Section 2 & 3).
+            - "positive_signals": Positive implications from the data and text.
+            - "potential_risks": Risks identified in Section 2 and Section 3.
+            - "overall_opinion": A final concluding remark (in Korean).
+        """
+        return prompt
+
+    elif filing_type == "8-K":
+        # 8-K 용 프롬프트
+        prompt = f"""
+            You are an expert breaking news analyst. Analyze the following 8-K filing for "{ticker}".
+            This filing reports a specific, immediate event. Analyze it and provide your response as a single, minified JSON object...
+
+            - "executive_summary": A 3-sentence summary (in Korean) explaining *what just happened* and its potential impact.
+            - "objective_facts": Some Sentences (in Korean) explaining 'Key facts of the event'.
+            --- 8-K TEXT ---
+            {data.clean_8k_text}
+        """
+        return prompt
+
+    raise ValueError(f"Unsupported filing_type for prompt generation: {filing_type}")
+
+
+async def get_comprehensive_analysis(data: ExtractedFilingData, ticker: str, filing_type: str):
     """
+        Gemini API를 호출하여 객관적 요약과 투자 분석을 모두 가져옵니다.
+    """
+
+    prompt = _build_prompt(data, ticker, filing_type)   # 공시별 프롬프트 분리
+
+    if not prompt:
+        logger.error(f"[Gemini] {ticker} {filing_type}에 대한 프롬프트를 생성할 수 없습니다.")
+        return None
     try:
         generation_config = genai.types.GenerationConfig(response_mime_type="application/json")
 
         loop = asyncio.get_running_loop()
-
         response = await loop.run_in_executor(
             None,
             lambda: model.generate_content(prompt, generation_config=generation_config)
@@ -62,4 +121,4 @@ async def get_comprehensive_analysis(filing_text, ticker):
 
     except Exception as e:
         logger.error(f"[Gemini] Gemini JSON 분석 실패 ({ticker}): {e}", exc_info=True)
-        raise e
+        return None

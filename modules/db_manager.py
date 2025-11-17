@@ -89,6 +89,7 @@ async def setup_database():
             accession_number TEXT NOT NULL PRIMARY KEY,
             ticker TEXT NOT NULL,
             filing_type TEXT NOT NULL,
+            filing_date DATE DEFAULT CURRENT_DATE,
             filing_url TEXT NOT NULL,
             status TEXT NOT NULL,
             last_modified_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
@@ -97,6 +98,7 @@ async def setup_database():
             accession_number TEXT NOT NULL PRIMARY KEY,
             ticker TEXT NOT NULL,
             filing_type TEXT NOT NULL,
+            filing_date DATE DEFAULT CURRENT_DATE,
             filing_url TEXT NOT NULL,
             gemini_analysis JSONB,
             analyzed_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
@@ -191,15 +193,15 @@ async def update_last_filing_info(last_filing: FilingInfo):
 async def update_analysis_queue(analysis_job: FilingInfo):
     """ UPSERT analysis queue for ticker into 'analysis_queue' table. """
     sql = """
-    INSERT INTO analysis_queue (accession_number, ticker, filing_type, filing_url, status, last_modified_at) 
-    VALUES (%s, %s, %s, %s, %s, %s)
+    INSERT INTO analysis_queue (accession_number, ticker, filing_type, filing_date, filing_url, status, last_modified_at) 
+    VALUES (%s, %s, %s, %s, %s, %s, %s)
     ON CONFLICT(accession_number) DO UPDATE SET
     status = excluded.status,
     last_modified_at = excluded.last_modified_at
     """
     async with get_db_connection() as cur:
         await cur.execute(sql,
-                    (analysis_job.accession_number, analysis_job.ticker, analysis_job.filing_type,
+                    (analysis_job.accession_number, analysis_job.ticker, analysis_job.filing_type, analysis_job.filing_date,
                      analysis_job.filing_url, analysis_job.status, datetime.datetime.now(datetime.timezone.utc))
                     )
 
@@ -208,7 +210,7 @@ async def get_pending_jobs(limit: int) -> list[FilingInfo]:
     """ Get a limited number of pending jobs from 'analysis_queue' table. """
     jobs: list[FilingInfo] = list()
     sql = """
-            SELECT accession_number, ticker, filing_type, filing_url
+            SELECT accession_number, ticker, filing_type, filing_date, filing_url
             FROM analysis_queue
             WHERE status = 'PENDING'
             ORDER BY last_modified_at ASC
@@ -224,6 +226,7 @@ async def get_pending_jobs(limit: int) -> list[FilingInfo]:
                 accession_number=row['accession_number'],
                 ticker=row['ticker'],
                 filing_type=row['filing_type'],
+                filing_date=row['filing_date'],
                 filing_url=row['filing_url'],
                 status=AnalysisStatus.PENDING.value,
             ))
@@ -241,15 +244,15 @@ async def insert_analysis_archive(analysis_job: FilingInfo):
     Insert an analysis archive into 'analysis_archive' table.
     """
     sql = """
-        INSERT INTO analysis_archive (accession_number, ticker, filing_type, filing_url, gemini_analysis, analyzed_at) 
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO analysis_archive (accession_number, ticker, filing_type, filing_date, filing_url, gemini_analysis, analyzed_at) 
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
     # gemini_analysis가 dict이므로 json.dumps로 텍스트화
     gemini_analysis_json = json.dumps(analysis_job.gemini_analysis) if analysis_job.gemini_analysis else None
 
     async with get_db_connection() as cur:
         await cur.execute(sql,
-                    (analysis_job.accession_number, analysis_job.ticker, analysis_job.filing_type,
+                    (analysis_job.accession_number, analysis_job.ticker, analysis_job.filing_type, analysis_job.filing_date,
                      analysis_job.filing_url, gemini_analysis_json, datetime.datetime.now(datetime.timezone.utc))
                     )
 
@@ -257,7 +260,7 @@ async def insert_analysis_archive(analysis_job: FilingInfo):
 async def get_analysis_archive(ticker):
     return
 
-
+### 할당량 테이블 ###
 async def get_quota_status() -> dict:
     """현재 할당량 상태(카운트, 날짜)를 DB에서 가져옵니다."""
     sql = "SELECT quota_date, request_count FROM daily_quota_tracker WHERE id = 1"

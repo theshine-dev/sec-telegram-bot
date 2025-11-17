@@ -49,7 +49,7 @@ LOGGING_CONFIG = {
             'formatter': 'default',
             'encoding': 'utf-8',
         },
-        # SEC API 및 티커 검증 로직용
+        # SEC Parser 및 티커 검증 로직용
         'sec_file_handler': {
             'level': GLOBAL_LOG_LEVEL,
             'class': 'logging.handlers.RotatingFileHandler',
@@ -88,7 +88,7 @@ LOGGING_CONFIG = {
             'propagate': False,  # 부모(root)로 로그 전파 차단
         },
         # __name__이 'sec_helper' 또는 'ticker_validator'인 경우
-        'modules.sec_helper': {
+        'modules.sec_parser': {
             'level': GLOBAL_LOG_LEVEL,
             'handlers': ['console', 'sec_file_handler'],
             'propagate': False,
