@@ -10,7 +10,7 @@ from configs.config import GEMINI_API_KEY
 logger = logging.getLogger(__name__)
 
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-pro-latest')
+model = genai.GenerativeModel('gemini-3-flash')
 
 
 async def get_comprehensive_analysis(filing_text, ticker):
