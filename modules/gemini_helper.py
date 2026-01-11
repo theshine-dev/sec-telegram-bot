@@ -13,6 +13,7 @@ genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-3-flash')
 
 
+
 async def get_comprehensive_analysis(filing_text, ticker):
     """
     Gemini API를 한 번만 호출하여 객관적 요약과 투자 분석을 모두 가져옵니다.
