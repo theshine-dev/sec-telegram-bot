@@ -14,21 +14,16 @@ logger = logging.getLogger(__name__)
 async def _process_single_job(job: FilingInfo):
     """
     Helper function for processing a single analysis job.
-    Args:
-        job:
-
-    Returns:
-
     """
     try:
         logger.info(f"[Analyzer] 작업 시작: {job.ticker} - {job.accession_number} (시도 {job.retry_count + 1}회)")
 
-        # 1. (수정) sec_parser로 공시 데이터 "추출"
+        # 1. sec_parser로 공시 데이터 "추출"
         extracted_data = await sec_parser.extract_filing_data(job)
         if not extracted_data:
             raise ValueError("공시에서 유의미한 데이터를 추출하지 못했습니다.")
 
-        # 2. (수정) 추출된 데이터를 Gemini로 "분석"
+        # 2. 추출된 데이터를 Gemini로 "분석"
         analysis_result = await gemini_helper.get_comprehensive_analysis(
             extracted_data,
             job.ticker,
@@ -40,17 +35,18 @@ async def _process_single_job(job: FilingInfo):
         job.update_gemini_analysis(analysis_result)
         job.update_status(AnalysisStatus.COMPLETED.value)
 
-        # 3. 분석 성공 (이하 동일)
+        # 3. 분석 성공
         await db_manager.insert_analysis_archive(job)
         await send_filing_notification_to_users(job)
         await db_manager.remove_analysis_queue(job)
         logger.info(f"[Analyzer] {job.ticker} - {job.accession_number} 공시 분석 완료 및 사용자 발송 완료.")
 
+        return True  # success indicator for quota counting
 
     except Exception as e:
         logger.error(f"[Analyzer] {job.ticker} - {job.accession_number} 처리 실패: {e}")
-"""
-        # (핵심) 3. 실패 시, 재시도 횟수 증가 및 상태 업데이트
+
+        # 실패 시, 재시도 횟수 증가 및 상태 업데이트
         job.retry_count += 1
         if job.retry_count >= config.MAX_RETRY_LIMIT:
             # 최대 재시도 횟수 도달 시 '영구 실패'
@@ -62,7 +58,8 @@ async def _process_single_job(job: FilingInfo):
             job.update_status(AnalysisStatus.FAILED.value)
 
         await db_manager.update_analysis_queue(job)
-"""
+
+        return False  # failure indicator
 
 
 async def discover_new_filings():
@@ -115,7 +112,7 @@ async def discover_new_filings():
 
 async def process_analysis_queue():
     """
-    Get pending jobs withing the limit from 'analysis_queue', and Process(Analyze) them.
+    Get pending jobs within the limit from 'analysis_queue', and Process(Analyze) them.
     """
     logger.debug("[Analyzer] 처리해야할 작업이 있는지 탐색...")
 
@@ -129,14 +126,19 @@ async def process_analysis_queue():
         logger.info("[Analyzer] 처리할 작업이 없습니다.")
         return
 
-    # 수정 필요 -> job 처리 중 실패한 부분도 할당량에 반영되는 오류
-    new_count = current_count + len(jobs)
-    await db_manager.update_quota_count(new_count, datetime.now(timezone.utc))
-    logger.info(f"[Analyzer] API 할당량 사용: {len(jobs)}건 (오늘 총 {new_count}/50 건)")
-
     logger.info(f"[Analyzer] {len(jobs)} 개의 처리할 작업을 가져왔습니다.")
+
+    # 각 작업 처리 후 성공 시에만 할당량 카운트 증가
+    success_count = 0
     for job in jobs:
-        await _process_single_job(job)
+        result = await _process_single_job(job)
+        if result:
+            success_count += 1
+
+    if success_count > 0:
+        new_count = current_count + success_count
+        await db_manager.update_quota_count(new_count, datetime.now(timezone.utc))
+        logger.info(f"[Analyzer] API 할당량 사용: {success_count}건 (오늘 총 {new_count}/50 건)")
 
 
 async def calc_current_quota_status() -> tuple[int, int]:

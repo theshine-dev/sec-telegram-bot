@@ -10,9 +10,19 @@ from configs.types import ExtractedFilingData
 
 logger = logging.getLogger(__name__)
 
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-2.5-flash')
+_model = None
 
+
+def _get_model():
+    """Lazy-initialize and return the Gemini model singleton."""
+    global _model
+    if _model is None:
+        if not GEMINI_API_KEY:
+            raise ValueError("GEMINI_API_KEY 환경 변수가 설정되지 않았습니다.")
+        genai.configure(api_key=GEMINI_API_KEY)
+        _model = genai.GenerativeModel('gemini-2.5-flash')
+        logger.info("[Gemini] 모델 초기화 완료.")
+    return _model
 
 
 def _build_prompt(data: ExtractedFilingData, ticker: str, filing_type: str) -> str:
@@ -51,7 +61,7 @@ def _build_prompt(data: ExtractedFilingData, ticker: str, filing_type: str) -> s
             {financial_summary}
 
             --- 2. Management's Discussion & Analysis (From Item 7) ---
-            {mda_summary} 
+            {mda_summary}
 
             --- 3. Risk Factors (From Item 1A) ---
             {risk_summary}
@@ -93,6 +103,7 @@ async def get_comprehensive_analysis(data: ExtractedFilingData, ticker: str, fil
         logger.error(f"[Gemini] {ticker} {filing_type}에 대한 프롬프트를 생성할 수 없습니다.")
         return None
     try:
+        model = _get_model()
         generation_config = genai.types.GenerationConfig(response_mime_type="application/json")
 
         loop = asyncio.get_running_loop()

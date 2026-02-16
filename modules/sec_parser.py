@@ -46,17 +46,6 @@ async def extract_filing_data(filing_info: FilingInfo) -> ExtractedFilingData:
     logger.debug(f"[Parser] {ticker}({cik}) - {filing_info.accession_number} 파싱 시작...")
 
     try:
-        # 1. 공시 객체 생성 (동기)
-        # filing = await _run_in_executor(
-        #     lambda: Filing(
-        #         cik=cik,
-        #         company='',
-        #         form='',
-        #         filing_date='',
-        #         accession_no=filing_info.accession_number,
-        #     )
-        # )
-
         # https://edgartools.readthedocs.io/en/latest/data-objects/
         filing: Filing = await _run_in_executor(
             lambda: Filing(
@@ -70,54 +59,33 @@ async def extract_filing_data(filing_info: FilingInfo) -> ExtractedFilingData:
 
         data = ExtractedFilingData()
 
-        filing_obj = filing.obj()
-
-        # 2. 공시 유형별로 데이터 추출
-        if isinstance(filing_obj, TenK):
-            ### 10-Q ###
-
-            # Business and Risk
-            filing_obj.business
-            filing_obj.management_discussion
-            filing_obj.risk_factors
-
-            # Financials
-            filing_obj.income_statement.to_dataframe()
-            filing_obj.cash_flow_statement.to_dataframe()
-            filing_obj.balance_sheet.to_dataframe()
-
-        elif isinstance(filing_obj, TenQ):
-            ### 10-K ###
-            filing_obj : TenQ = filing_obj
-            # filing_obj.
-
-
-        elif isinstance(filing_obj, EightK):
-            ### 8-K ###
+        # 8-K: extract plain text
+        if filing_info.filing_type == "8-K":
             data.clean_8k_text = await _run_in_executor(lambda: filing.text())
             logger.info(f"[Parser] {ticker} 8-K 파싱 완료 ({len(data.clean_8k_text or '')}자)")
 
-
+        # 10-K / 10-Q: extract structured data
         if filing_info.filing_type in ["10-K", "10-Q"]:
             filing_obj: TenK | TenQ = filing.obj()
 
             if filing_obj.management_discussion:
-                # (핵심) MD&A 및 Risk Factors 텍스트 추출 (동기)
                 data.mda_text = await _run_in_executor(lambda: filing_obj.management_discussion)
 
             if filing_obj.risk_factors:
                 data.risk_factors_text = await _run_in_executor(lambda: filing_obj.risk_factors)
 
             if filing_obj.income_statement:
-            # (핵심) 재무제표(XBRL)에서 핵심 숫자 추출 (동기)
                 is_df = filing_obj.income_statement.to_dataframe()
-                # 최신 분기/연도 데이터 추출
                 latest_period = is_df.columns[0]
-                data.financial_data = {
-                    "Revenue": is_df.loc['Revenues', latest_period],
-                    "NetIncome": is_df.loc['NetIncomeLoss', latest_period]
-                }
-                # (참고: 실제로는 'Revenues', 'NetIncomeLoss' 등 키 값이 다를 수 있어 예외 처리 필요)
+                data.financial_data = {}
+                try:
+                    data.financial_data["Revenue"] = is_df.loc['Revenues', latest_period]
+                except KeyError:
+                    logger.warning(f"[Parser] {ticker} 'Revenues' XBRL 태그를 찾을 수 없습니다.")
+                try:
+                    data.financial_data["NetIncome"] = is_df.loc['NetIncomeLoss', latest_period]
+                except KeyError:
+                    logger.warning(f"[Parser] {ticker} 'NetIncomeLoss' XBRL 태그를 찾을 수 없습니다.")
 
             logger.info(f"[Parser] {ticker} {filing_info.filing_type} 파싱 완료 (MD&A: {len(data.mda_text or '')}자)")
 
@@ -125,7 +93,6 @@ async def extract_filing_data(filing_info: FilingInfo) -> ExtractedFilingData:
 
     except Exception as e:
         logger.error(f"[Parser] {ticker} {filing_info.accession_number} 파싱 중 심각한 오류: {e}", exc_info=True)
-        # 빈 객체를 반환하거나 예외를 발생시킴
         raise
 
 
@@ -185,6 +152,6 @@ async def get_recent_filings_list(cik):
         return filings_data
 
     except requests.RequestException as e:
-        print(f"Error fetching recent filings list for CIK {cik}: {e}")
+        logger.error(f"Error fetching recent filings list for CIK {cik}: {e}")
         # 에러 발생 시 빈 리스트를 반환하여 프로그램 중단을 방지합니다.
         return []

@@ -44,6 +44,7 @@ class AnalysisStatus(Enum):
     PENDING = "PENDING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
+    PERMANENT_FAIL = "PERMANENT_FAIL"
 
     def __str__(self):
         return self.value
@@ -67,22 +68,6 @@ class FilingInfo:
     def update_status(self, status: str | AnalysisStatus):
         self.status = str(status)
 
-
-@dataclass
-class AnalysisResult:
-    """Gemini 분석 완료 후 DB에 업데이트할 결과를 담는 객체"""
-    accession_number: str
-    status: AnalysisStatus
-    summary: Optional[str] = None
-    insight: Optional[str] = None
-
-    def as_dict(self):
-        return {
-            'accession_number': self.accession_number,
-            'status': self.status.value,
-            'summary': self.summary,
-            'insight': self.insight,
-        }
 
 @dataclass
 class ExtractedFilingData:

@@ -17,7 +17,7 @@ PROCESSED_TICKER_FILE_PATH = DATA_DIR / "tickers.json"
 
 # Token, CHAT ID
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID","6939053311")    # 본인의 chat_id
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY")
 
 # DB
@@ -30,11 +30,11 @@ ANALYSIS_INTERVAL_SECONDS = int(os.environ.get("ANALYSIS_INTERVAL_SECONDS", 80))
 
 DISCOVER_FILING_AMOUNT = int(os.environ.get("DISCOVER_FILING_AMOUNT", 3))
 
+MAX_RETRY_LIMIT = int(os.environ.get("MAX_RETRY_LIMIT", 3))
+
 # Gemini Quota
 GEMINI_RPM_LIMIT = int(os.environ.get("GEMINI_RPM_LIMIT", 2))
 GEMINI_DAILY_LIMIT = int(os.environ.get("GEMINI_DAILY_LIMIT", 50))
-GEMINI_QUOTA_TIMEZONE = os.environ.get("GEMINI_QUOTA_TIMEZONE", "America/Los_Angeles")
-
 # Logging
 GLOBAL_LOG_LEVEL = os.environ.get("GLOBAL_LOG_LEVEL", "INFO").upper()
 

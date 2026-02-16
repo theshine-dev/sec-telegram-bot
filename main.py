@@ -83,6 +83,7 @@ async def post_init(app: Application):
         scheduler = app.bot_data['scheduler']
         scheduler.start()
         logger.info(f"[스케줄러] 초기 티커 갱신 작업 등록 완료(APScheduler)")
+        logger.info(f"[봇] 성공적으로 봇을 구동하였습니다.")
     except Exception as e:
         logger.critical(f"[스케줄러] 초기 티커 갱신 작업 등록 실패(APScheduler) : {e}")
 
@@ -132,7 +133,9 @@ def main():
         discover_new_filings,
         'interval',
         seconds=config.DISCOVER_INTERVAL_SECONDS,
-        id='discover_new_filings'
+        id='discover_new_filings',
+        max_instances=1,
+        coalesce=True,
     )
     scheduler.add_job(
         process_analysis_queue,
@@ -152,8 +155,6 @@ def main():
     application.add_handler(CommandHandler("list", sub_list))
 
     application.run_polling()
-
-    logger.info(f"[봇] 성공적으로 봇을 구동하였습니다.")
 
 
 if __name__ == '__main__':

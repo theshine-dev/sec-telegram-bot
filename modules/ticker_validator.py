@@ -10,12 +10,31 @@ from configs import config
 
 logger = logging.getLogger(__name__)
 
+# Module-level in-memory cache for ticker -> CIK mapping
+_ticker_cache: dict | None = None
+
+
+def _load_ticker_cache():
+    """Load ticker data from disk into the module-level cache."""
+    global _ticker_cache
+    try:
+        with open(config.PROCESSED_TICKER_FILE_PATH, 'r') as f:
+            _ticker_cache = json.load(f)
+        logger.debug(f"티커 캐시 로드 완료: {len(_ticker_cache)}개 항목")
+    except FileNotFoundError:
+        logger.critical("에러: 처리된 티커 목록 파일이 없습니다. 먼저 update_ticker_list()를 실행하세요.")
+        _ticker_cache = None
+    except Exception as e:
+        logger.error(f"티커 캐시 로드 중 에러: {e}")
+        _ticker_cache = None
+
 
 def _update_ticker_list():
     """
     실제 파일 처리 로직 (동기식).
     이 함수는 메인 스레드에서 직접 호출되어서는 안 됩니다.
     """
+    global _ticker_cache
     try:
         if os.path.exists(config.PROCESSED_TICKER_FILE_PATH):
             if time.time() - os.path.getmtime(config.PROCESSED_TICKER_FILE_PATH) < 86400:  # 24시간
@@ -38,6 +57,9 @@ def _update_ticker_list():
             json.dump(processed_data, f)
         logger.info("백그라운드: 티커 목록 업데이트 및 저장 완료.")
 
+        # Invalidate and reload cache after update
+        _ticker_cache = processed_data
+
     except Exception as e:
         logger.error(f"백그라운드 티커 업데이트 실패: {e}")
 
@@ -49,8 +71,6 @@ async def update_ticker_list():
     logger.debug("Trigger : Update ticker list(Async)")
 
     loop = asyncio.get_running_loop()
-    # run_in_executor를 사용하여 _blocking_file_update 함수를
-    # 기본 스레드 풀(None)에서 실행합니다.
     await loop.run_in_executor(None, func=_update_ticker_list)
     logger.info("Success : Update Ticker List(Background)")
 
@@ -59,15 +79,9 @@ def get_cik_for_ticker(ticker):
     로컬에 캐시된 티커 목록에서 CIK를 즉시 조회합니다.
     존재하면 CIK(문자열)를, 없으면 None을 반환합니다.
     """
-    try:
-        with open(config.PROCESSED_TICKER_FILE_PATH, 'r') as f:
-            ticker_map = json.load(f)
-
-        # .get()을 사용하여 티커가 존재하지 않으면 None을 반환
-        return ticker_map.get(ticker.upper())
-    except FileNotFoundError:
-        logger.critical("에러: 처리된 티커 목록 파일이 없습니다. 먼저 update_ticker_list()를 실행하세요.")
+    global _ticker_cache
+    if _ticker_cache is None:
+        _load_ticker_cache()
+    if _ticker_cache is None:
         return None
-    except Exception as e:
-        logger.error(f"티커 조회 중 에러: {e}")
-        return None
+    return _ticker_cache.get(ticker.upper())

@@ -63,6 +63,7 @@ async def get_db_connection():
                 logger.error(f"[DB] DB 오류 발생: {e}", exc_info=True)
                 await conn.rollback()
                 logger.debug("[DB] DB 트랜잭션 롤백됨")
+                raise
             except Exception as e:
                 logger.error(f"[DB] 알 수 없는 오류: {e}", exc_info=True)
                 await conn.rollback()
@@ -108,6 +109,8 @@ async def setup_database():
             quota_date TIMESTAMPTZ NOT NULL,
             request_count INTEGER NOT NULL DEFAULT 0
         );
+        CREATE INDEX IF NOT EXISTS idx_analysis_queue_status ON analysis_queue(status);
+        CREATE INDEX IF NOT EXISTS idx_subscriptions_ticker ON subscriptions(ticker);
         """
 
     async with get_db_connection() as cur:
@@ -256,9 +259,6 @@ async def insert_analysis_archive(analysis_job: FilingInfo):
                      analysis_job.filing_url, gemini_analysis_json, datetime.datetime.now(datetime.timezone.utc))
                     )
 
-
-async def get_analysis_archive(ticker):
-    return
 
 ### 할당량 테이블 ###
 async def get_quota_status() -> dict:
