@@ -4,11 +4,13 @@ import logging
 from telegram import Bot
 from telegram.constants import ParseMode
 
-from modules import db_manager
+from modules import db_manager, gemini_helper
 from configs.config import TELEGRAM_BOT_TOKEN
 from configs.types import FilingInfo
 
 logger = logging.getLogger(__name__)
+
+TELEGRAM_MAX_LENGTH = 4096
 
 _bot: Bot | None = None
 
@@ -21,37 +23,59 @@ def _get_bot() -> Bot:
     return _bot
 
 
-async def send_filing_notification_to_users(filing_info: FilingInfo):
-    bot = _get_bot()
+def _build_message(filing_info: FilingInfo, analysis: dict) -> str:
+    """FilingInfo와 분석 결과로 Telegram HTML 메시지를 조립."""
+    type_emoji = {"10-K": "📋", "10-Q": "📄", "8-K": "⚡"}.get(filing_info.filing_type, "🔔")
 
-    gemini_analysis = filing_info.gemini_analysis
+    msg = f"{type_emoji} <b>{html.escape(filing_info.ticker)} 신규 공시 ({html.escape(filing_info.filing_type)})</b>\n"
+    msg += f"<code>📅 {html.escape(filing_info.filing_date)}</code>\n\n"
 
-    # Escape dynamic Gemini content to prevent HTML injection
-    executive_summary = html.escape(gemini_analysis.get('executive_summary', '요약 없음'))
-    positive_signals = html.escape(gemini_analysis.get('positive_signals', 'N/A'))
-    potential_risks = html.escape(gemini_analysis.get('potential_risks', 'N/A'))
-    overall_opinion = html.escape(gemini_analysis.get('overall_opinion', 'N/A'))
-
-    msg = f"🔔 <b>{html.escape(filing_info.ticker)} 신규 공시 ({html.escape(filing_info.filing_type)})</b> 🔔\n\n"
-
-    msg += f"<b>✨ 3줄 요약 </b>\n"
+    executive_summary = html.escape(analysis.get('executive_summary', '요약 없음'))
+    msg += "<b>✨ 3줄 요약</b>\n"
     msg += f"<i>{executive_summary}</i>\n\n"
 
-    msg += "<b>📊 주요 공시 내용 </b>\n"
-    facts = gemini_analysis.get('objective_facts', [])
+    msg += "<b>📊 주요 공시 내용</b>\n"
+    facts = analysis.get('objective_facts', [])
+    if isinstance(facts, str):  # Gemini가 배열 대신 문자열 반환 시 방어
+        facts = [facts]
     if facts:
         for fact in facts:
             msg += f"  • {html.escape(str(fact))}\n"
     else:
-        msg += "  - N/A\n"
+        msg += "  • N/A\n"
     msg += "\n"
 
-    msg += "<b>💡 AI 인사이트 </b>\n"
-    msg += f"  <b>[👍]</b> {positive_signals}\n"
-    msg += f"  <b>[👎]</b> {potential_risks}\n"
-    msg += f"  <b>[종합]</b> {overall_opinion}\n\n"
+    positive_signals = html.escape(analysis.get('positive_signals', 'N/A'))
+    potential_risks  = html.escape(analysis.get('potential_risks',  'N/A'))
+    overall_opinion  = html.escape(analysis.get('overall_opinion',  'N/A'))
+
+    msg += "<b>💡 AI 인사이트</b>\n"
+    msg += f"<b>👍 긍정 신호</b>\n{positive_signals}\n\n"
+    msg += f"<b>👎 위험 신호</b>\n{potential_risks}\n\n"
+    msg += f"<b>💬 종합 의견</b>\n{overall_opinion}\n\n"
 
     msg += f'🔗 <a href="{html.escape(filing_info.filing_url)}">공시 원문 보기</a>'
+
+    return msg
+
+
+async def send_filing_notification_to_users(filing_info: FilingInfo):
+    bot = _get_bot()
+    analysis = filing_info.gemini_analysis or {}
+
+    msg = _build_message(filing_info, analysis)
+
+    # Telegram 4096자 초과 시 Gemini에게 재요약 요청 후 재조립
+    if len(msg) > TELEGRAM_MAX_LENGTH:
+        logger.warning(f"[Telegram] {filing_info.ticker} 메시지 {len(msg)}자 초과 — Gemini 재요약 요청.")
+        analysis = await gemini_helper.shorten_analysis(analysis)
+        msg = _build_message(filing_info, analysis)
+
+        # 재요약 후에도 초과 시 (안전망) 말미 절단
+        if len(msg) > TELEGRAM_MAX_LENGTH:
+            tail = "\n\n<i>⚠️ 내용이 너무 길어 일부가 생략되었습니다.</i>"
+            msg = msg[:TELEGRAM_MAX_LENGTH - len(tail)] + tail
+            logger.warning(f"[Telegram] {filing_info.ticker} 재요약 후에도 초과 — 강제 절단.")
 
     users_id = await db_manager.get_users_for_ticker(filing_info.ticker)
     for user_id in users_id:
