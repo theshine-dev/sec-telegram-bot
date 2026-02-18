@@ -7,6 +7,7 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
 
 # 실행될 작업(Job) 정의
 jobs:
