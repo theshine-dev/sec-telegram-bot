@@ -8,6 +8,11 @@ on:
     tags:
       - 'v*.*.*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Docker 이미지 태그 (예: v1.3.0)'
+        required: true
+        default: 'v1.3.0'
 
 # 실행될 작업(Job) 정의
 jobs:
@@ -25,7 +30,9 @@ jobs:
       #    Docker 태그는 대소문자를 구분하므로, 소문자로 통일하는 것이 좋습니다.
       - name: Set tag to lowercase
         id: docker_meta_prep
-        run: echo "DOCKER_TAG_LC=$(echo ${{ github.ref_name }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+        run: |
+          RAW_TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "DOCKER_TAG_LC=$(echo $RAW_TAG | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       # 3. Docker Hub 로그인 (1단계, 2단계에서 등록한 Secrets 사용)
       - name: Log in to Docker Hub
