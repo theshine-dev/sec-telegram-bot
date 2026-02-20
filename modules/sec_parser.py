@@ -3,7 +3,7 @@ import asyncio
 import logging
 import requests
 
-from edgar import set_identity, Filing, find, enable_local_storage
+from edgar import set_identity, Filing, find, use_local_storage
 from edgar.financials import Financials
 from edgar.company_reports import TenK, TenQ, EightK
 
@@ -30,7 +30,7 @@ async def init_parser():
 
     # 로컬 캐싱 활성화: 동일 공시 재요청 시 SEC API 호출 없이 로컬에서 로드
     config.EDGAR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    await _run_in_executor(lambda: enable_local_storage(str(config.EDGAR_CACHE_DIR)))
+    await _run_in_executor(lambda: use_local_storage(str(config.EDGAR_CACHE_DIR)))
     logger.info(f"[Parser] edgartools 로컬 캐싱 활성화: {config.EDGAR_CACHE_DIR}")
 
 
