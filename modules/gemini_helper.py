@@ -25,6 +25,22 @@ def _get_model():
     return _model
 
 
+def _format_amount(value) -> str:
+    """숫자를 읽기 쉬운 달러 금액 문자열로 변환. None이면 'N/A' 반환."""
+    if value is None:
+        return "N/A"
+    try:
+        v = float(value)
+        if abs(v) >= 1e9:
+            return f"${v / 1e9:.2f}B"
+        elif abs(v) >= 1e6:
+            return f"${v / 1e6:.2f}M"
+        else:
+            return f"${v:,.0f}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
 def _build_prompt(data: ExtractedFilingData, ticker: str, filing_type: str) -> str:
     """
     Return proper prompt using
@@ -40,12 +56,21 @@ def _build_prompt(data: ExtractedFilingData, ticker: str, filing_type: str) -> s
         # 10-K / 10-Q 용 하이브리드 프롬프트
 
         # 1. 재무 데이터 (숫자)
-        financial_summary = "N/A"
-        if data.financial_data:
-            financial_summary = (
-                f"- Revenue: {data.financial_data.get('Revenue', 'N/A')}\n"
-                f"- Net Income: {data.financial_data.get('NetIncome', 'N/A')}"
-            )
+        fd = data.financial_data or {}
+        _FINANCIAL_LABELS = [
+            ("Revenue",           "Revenue"),
+            ("GrossProfit",       "Gross Profit"),
+            ("OperatingIncome",   "Operating Income"),
+            ("NetIncome",         "Net Income"),
+            ("EPS",               "EPS"),
+            ("OperatingCashFlow", "Operating Cash Flow"),
+            ("FreeCashFlow",      "Free Cash Flow"),
+            ("TotalAssets",       "Total Assets"),
+            ("TotalDebt",         "Total Debt"),
+            ("Cash",              "Cash & Equivalents"),
+        ]
+        lines = [f"- {label}: {_format_amount(fd[key])}" for key, label in _FINANCIAL_LABELS if key in fd]
+        financial_summary = "\n".join(lines) if lines else "N/A"
 
         # 2. 경영진 분석 (텍스트)
         mda_summary = data.mda_text or "N/A"
@@ -94,15 +119,49 @@ JSON field instructions:
         return prompt
 
     elif filing_type == "8-K":
-        # 8-K 용 프롬프트
+        # 8-K Item 코드 → 이벤트 유형 설명 매핑
+        ITEM_DESCRIPTIONS = {
+            "1.01": "Entry into Material Definitive Agreement",
+            "1.02": "Termination of Material Definitive Agreement",
+            "1.03": "Bankruptcy or Receivership",
+            "1.05": "Cybersecurity Incident",
+            "2.01": "Completion of Acquisition or Disposition",
+            "2.02": "Results of Operations and Financial Condition (실적 발표)",
+            "2.03": "Creation of Direct Financial Obligation",
+            "2.05": "Costs Associated with Exit or Disposal Activities",
+            "2.06": "Material Impairments",
+            "4.01": "Changes in Certifying Accountant",
+            "4.02": "Non-Reliance on Previously Issued Financial Statements",
+            "5.02": "Departure/Appointment of Directors or Officers (임원 변동)",
+            "5.03": "Amendments to Articles of Incorporation or Bylaws",
+            "5.07": "Submission of Matters to Vote of Security Holders",
+            "7.01": "Regulation FD Disclosure",
+            "8.01": "Other Events",
+            "9.01": "Financial Statements and Exhibits",
+        }
+        event_context = "N/A"
+        if data.event_items:
+            described = [
+                f"{code} ({ITEM_DESCRIPTIONS.get(code, 'Unknown')})"
+                for code in data.event_items
+                if code != "9.01"  # 첨부파일 항목은 제외
+            ]
+            if described:
+                event_context = ", ".join(described)
+
+        filing_text = data.press_release_text or data.clean_8k_text or ""
+
         prompt = f"""
 You are an expert equity analyst covering breaking market-moving news for retail investors.
 Analyze the following 8-K SEC filing for "{ticker}".
 8-K filings report specific material events. Cut through the legalese: tell investors exactly what happened and what it means for the stock.
 Respond with a single minified JSON object with EXACTLY these 5 keys, all values in Korean.
 
+--- REPORTED EVENT ITEMS ---
+{event_context}
+
 --- 8-K FILING TEXT ---
-{data.clean_8k_text}
+{filing_text}
 
 JSON field instructions:
 

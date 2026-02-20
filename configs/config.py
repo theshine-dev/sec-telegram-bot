@@ -14,6 +14,7 @@ DATA_DIR = BASE_DIR / "data"
 LOG_DIR = BASE_DIR / "logs"
 
 PROCESSED_TICKER_FILE_PATH = DATA_DIR / "tickers.json"
+EDGAR_CACHE_DIR = DATA_DIR / "edgar_cache"
 
 # Token, CHAT ID
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")

@@ -81,5 +81,7 @@ class ExtractedFilingData:
     financial_data: Optional[Dict] = None  # Item 8. 핵심 재무제표 숫자 (예: {"Revenue": 100, "Net Income": 10})
 
     # 8-K 용
-    clean_8k_text: Optional[str] = None  # 잡음이 제거된 8-K 전문
-    event_title: Optional[str] = None  # 8-K의 이벤트 Item (예: "Item 5.02")
+    clean_8k_text: Optional[str] = None       # 잡음이 제거된 8-K 전문 (폴백용)
+    press_release_text: Optional[str] = None  # 프레스릴리즈 본문 (우선 사용)
+    event_items: Optional[list] = None        # 8-K Item 코드 목록 (예: ["2.02", "9.01"])
+    event_title: Optional[str] = None         # 8-K의 이벤트 Item (예: "Item 5.02")

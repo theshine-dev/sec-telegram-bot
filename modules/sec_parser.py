@@ -3,7 +3,7 @@ import asyncio
 import logging
 import requests
 
-from edgar import set_identity, Filing, find
+from edgar import set_identity, Filing, find, enable_local_storage
 from edgar.financials import Financials
 from edgar.company_reports import TenK, TenQ, EightK
 
@@ -23,11 +23,15 @@ async def _run_in_executor(sync_func):
 
 async def init_parser():
     """
-    봇 시작 시 edgartools의 ID를 설정합니다. (필수)
+    봇 시작 시 edgartools의 ID 및 로컬 캐시를 설정합니다. (필수)
     """
     logger.info(f"SEC Parser(edgartools) ID 설정: {config.SEC_USER_AGENT}")
-    # set_identity는 동기 함수이므로 스레드 풀에서 실행
     await _run_in_executor(lambda: set_identity(config.SEC_USER_AGENT))
+
+    # 로컬 캐싱 활성화: 동일 공시 재요청 시 SEC API 호출 없이 로컬에서 로드
+    config.EDGAR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    await _run_in_executor(lambda: enable_local_storage(str(config.EDGAR_CACHE_DIR)))
+    logger.info(f"[Parser] edgartools 로컬 캐싱 활성화: {config.EDGAR_CACHE_DIR}")
 
 
 async def extract_filing_data(filing_info: FilingInfo) -> ExtractedFilingData:
@@ -49,7 +53,7 @@ async def extract_filing_data(filing_info: FilingInfo) -> ExtractedFilingData:
         # https://edgartools.readthedocs.io/en/latest/data-objects/
         filing: Filing = await _run_in_executor(
             lambda: Filing(
-                        cik=cik,
+                        cik=int(cik),
                         company=ticker,
                         form=filing_info.filing_type,
                         filing_date=filing_info.filing_date,
@@ -59,33 +63,80 @@ async def extract_filing_data(filing_info: FilingInfo) -> ExtractedFilingData:
 
         data = ExtractedFilingData()
 
-        # 8-K: extract plain text
+        # 8-K: 구조화 추출 (프레스릴리즈 우선, 없으면 전문 폴백)
         if filing_info.filing_type == "8-K":
-            data.clean_8k_text = await _run_in_executor(lambda: filing.text())
-            logger.info(f"[Parser] {ticker} 8-K 파싱 완료 ({len(data.clean_8k_text or '')}자)")
+            eightk = await _run_in_executor(lambda: filing.obj())
+
+            # 1. Item 코드 목록 추출 (예: ["2.02", "9.01"])
+            try:
+                raw_items = eightk.items
+                if raw_items:
+                    data.event_items = [str(item) for item in raw_items]
+                    logger.debug(f"[Parser] {ticker} 8-K Items: {data.event_items}")
+            except Exception as e:
+                logger.debug(f"[Parser] {ticker} 8-K Item 목록 추출 실패: {e}")
+
+            # 2. 프레스릴리즈 우선 추출
+            try:
+                if eightk.has_press_release:
+                    prs = eightk.press_releases
+                    if prs:
+                        data.press_release_text = prs[0].content
+                        logger.info(f"[Parser] {ticker} 8-K 프레스릴리즈 추출 완료 ({len(data.press_release_text)}자)")
+            except Exception as e:
+                logger.debug(f"[Parser] {ticker} 프레스릴리즈 추출 실패: {e}")
+
+            # 3. 프레스릴리즈 없으면 전문 텍스트 폴백
+            if not data.press_release_text:
+                data.clean_8k_text = await _run_in_executor(lambda: filing.text())
+                logger.info(f"[Parser] {ticker} 8-K 파싱 완료 ({len(data.clean_8k_text or '')}자)")
+            else:
+                logger.info(f"[Parser] {ticker} 8-K 파싱 완료 (프레스릴리즈 {len(data.press_release_text)}자)")
 
         # 10-K / 10-Q: extract structured data
         if filing_info.filing_type in ["10-K", "10-Q"]:
-            filing_obj: TenK | TenQ = filing.obj()
+            # filing.obj()는 네트워크/디스크 I/O가 포함된 동기 호출 → executor 필수
+            filing_obj: TenK | TenQ = await _run_in_executor(lambda: filing.obj())
 
             if filing_obj.management_discussion:
-                data.mda_text = await _run_in_executor(lambda: filing_obj.management_discussion)
+                data.mda_text = filing_obj.management_discussion
 
             if filing_obj.risk_factors:
-                data.risk_factors_text = await _run_in_executor(lambda: filing_obj.risk_factors)
+                data.risk_factors_text = filing_obj.risk_factors
 
-            if filing_obj.income_statement:
-                is_df = filing_obj.income_statement.to_dataframe()
-                latest_period = is_df.columns[0]
-                data.financial_data = {}
-                try:
-                    data.financial_data["Revenue"] = is_df.loc['Revenues', latest_period]
-                except KeyError:
-                    logger.warning(f"[Parser] {ticker} 'Revenues' XBRL 태그를 찾을 수 없습니다.")
-                try:
-                    data.financial_data["NetIncome"] = is_df.loc['NetIncomeLoss', latest_period]
-                except KeyError:
-                    logger.warning(f"[Parser] {ticker} 'NetIncomeLoss' XBRL 태그를 찾을 수 없습니다.")
+            # financials API로 재무 데이터 추출 (표준화된 메서드 사용)
+            try:
+                financials = filing_obj.financials
+                if financials:
+                    def _extract_financials(fin):
+                        result = {}
+                        for key, method in [
+                            # 손익계산서
+                            ("Revenue",         fin.get_revenue),
+                            ("GrossProfit",     fin.get_gross_profit),
+                            ("OperatingIncome", fin.get_operating_income),
+                            ("NetIncome",       fin.get_net_income),
+                            ("EPS",             fin.get_earnings_per_share),
+                            # 현금흐름표
+                            ("OperatingCashFlow", fin.get_operating_cash_flow),
+                            ("FreeCashFlow",      fin.get_free_cash_flow),
+                            # 재무상태표
+                            ("TotalAssets", fin.get_total_assets),
+                            ("TotalDebt",   fin.get_total_debt),
+                            ("Cash",        fin.get_cash_and_equivalents),
+                        ]:
+                            try:
+                                val = method()
+                                if val is not None:
+                                    result[key] = val
+                            except Exception:
+                                pass
+                        return result
+
+                    data.financial_data = await _run_in_executor(lambda: _extract_financials(financials))
+                    logger.info(f"[Parser] {ticker} 재무 데이터 추출 완료: {list(data.financial_data.keys())}")
+            except Exception as e:
+                logger.warning(f"[Parser] {ticker} 재무 데이터 추출 실패: {e}")
 
             logger.info(f"[Parser] {ticker} {filing_info.filing_type} 파싱 완료 (MD&A: {len(data.mda_text or '')}자)")
 
