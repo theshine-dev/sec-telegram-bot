@@ -129,14 +129,14 @@ async def extract_filing_data(filing_info: FilingInfo) -> ExtractedFilingData:
                                 val = method()
                                 if val is not None:
                                     result[key] = val
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.debug(f"[Parser] {key} 추출 실패 (무시): {e}")
                         return result
 
                     data.financial_data = await _run_in_executor(lambda: _extract_financials(financials))
                     logger.info(f"[Parser] {ticker} 재무 데이터 추출 완료: {list(data.financial_data.keys())}")
             except Exception as e:
-                logger.warning(f"[Parser] {ticker} 재무 데이터 추출 실패: {e}")
+                logger.warning(f"[Parser] {ticker} 재무 데이터 추출 실패: {e}", exc_info=True)
 
             logger.info(f"[Parser] {ticker} {filing_info.filing_type} 파싱 완료 (MD&A: {len(data.mda_text or '')}자)")
 
@@ -203,6 +203,6 @@ async def get_recent_filings_list(cik):
         return filings_data
 
     except requests.RequestException as e:
-        logger.error(f"Error fetching recent filings list for CIK {cik}: {e}")
+        logger.error(f"[Parser] CIK {cik} 최근 공시 목록 요청 실패: {e}", exc_info=True)
         # 에러 발생 시 빈 리스트를 반환하여 프로그램 중단을 방지합니다.
         return []

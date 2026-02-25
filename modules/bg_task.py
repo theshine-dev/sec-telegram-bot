@@ -19,32 +19,48 @@ async def _process_single_job(job: FilingInfo):
         logger.info(f"[Analyzer] 작업 시작: {job.ticker} - {job.accession_number} (시도 {job.retry_count + 1}회)")
 
         # 1. sec_parser로 공시 데이터 "추출"
-        extracted_data = await sec_parser.extract_filing_data(job)
+        try:
+            extracted_data = await sec_parser.extract_filing_data(job)
+        except Exception as e:
+            raise RuntimeError(f"[파싱 실패] {e}") from e
+
         if not extracted_data:
             raise ValueError("공시에서 유의미한 데이터를 추출하지 못했습니다.")
 
         # 2. 추출된 데이터를 Gemini로 "분석"
-        analysis_result = await gemini_helper.get_comprehensive_analysis(
-            extracted_data,
-            job.ticker,
-            job.filing_type
-        )
+        try:
+            analysis_result = await gemini_helper.get_comprehensive_analysis(
+                extracted_data,
+                job.ticker,
+                job.filing_type
+            )
+        except Exception as e:
+            raise RuntimeError(f"[Gemini 실패] {e}") from e
+
         if not analysis_result:
             raise ValueError("Gemini API 분석에 실패했거나 결과가 비어있습니다.")
 
         job.update_gemini_analysis(analysis_result)
         job.update_status(AnalysisStatus.COMPLETED.value)
 
-        # 3. 분석 성공
-        await db_manager.insert_analysis_archive(job)
-        await send_filing_notification_to_users(job)
-        await db_manager.remove_analysis_queue(job)
+        # 3. DB 저장 및 Telegram 발송
+        try:
+            await db_manager.insert_analysis_archive(job)
+            await send_filing_notification_to_users(job)
+            await db_manager.remove_analysis_queue(job)
+        except Exception as e:
+            raise RuntimeError(f"[저장/발송 실패] {e}") from e
+
         logger.info(f"[Analyzer] {job.ticker} - {job.accession_number} 공시 분석 완료 및 사용자 발송 완료.")
 
         return True  # success indicator for quota counting
 
     except Exception as e:
-        logger.error(f"[Analyzer] {job.ticker} - {job.accession_number} 처리 실패: {e}")
+        logger.error(
+            f"[Analyzer] {job.ticker} - {job.accession_number} 처리 실패 "
+            f"(시도 {job.retry_count + 1}회): {e}",
+            exc_info=True
+        )
 
         # 실패 시, 재시도 횟수 증가 및 상태 업데이트
         job.retry_count += 1
@@ -70,44 +86,51 @@ async def discover_new_filings():
     tickers = await db_manager.get_all_subscribed_tickers()
 
     for ticker in tickers:
-        cik = ticker_validator.get_cik_for_ticker(ticker)
-        if not cik: continue
+        try:
+            cik = ticker_validator.get_cik_for_ticker(ticker)
+            if not cik: continue
 
-        # 1. get last filing info
-        last_accession_num = await db_manager.get_last_accession_number(ticker)
+            # 1. get last filing info
+            last_accession_num = await db_manager.get_last_accession_number(ticker)
 
-        filings_list = await sec_parser.get_recent_filings_list(cik)  # "accession_number", "form_type", "filing_url"
-        new_filings_to_process = []
-        for filing in filings_list:
-            if filing['accession_number'] == last_accession_num:
-                logger.debug(f"[Discover] {ticker}에 새로운 공시가 없습니다.")
-                break
-            new_filings_to_process.append(filing)
+            filings_list = await sec_parser.get_recent_filings_list(cik)  # "accession_number", "form_type", "filing_url"
+            new_filings_to_process = []
+            for filing in filings_list:
+                if filing['accession_number'] == last_accession_num:
+                    logger.debug(f"[Discover] {ticker}에 새로운 공시가 없습니다.")
+                    break
+                new_filings_to_process.append(filing)
 
-        if new_filings_to_process:
-            new_filings_to_process = new_filings_to_process[:config.DISCOVER_FILING_AMOUNT]
-            logger.info(f"[Discover] {ticker}에서 {len(new_filings_to_process)}개의 새로운 공시 발견.")
-            for new_filing in reversed(new_filings_to_process): # 오래된 공시부터 DB 삽입
-                # 2. 'analysis_queue' 테이블에 'pending' 상태로 삽입 (UPSERT 사용)
-                await db_manager.update_analysis_queue(FilingInfo(
-                    accession_number=new_filing['accession_number'],
+            if new_filings_to_process:
+                new_filings_to_process = new_filings_to_process[:config.DISCOVER_FILING_AMOUNT]
+                logger.info(f"[Discover] {ticker}에서 {len(new_filings_to_process)}개의 새로운 공시 발견.")
+                for new_filing in reversed(new_filings_to_process): # 오래된 공시부터 DB 삽입
+                    # 2. 'analysis_queue' 테이블에 'pending' 상태로 삽입 (UPSERT 사용)
+                    await db_manager.update_analysis_queue(FilingInfo(
+                        accession_number=new_filing['accession_number'],
+                        ticker=ticker,
+                        filing_type=new_filing['form_type'],
+                        filing_date=new_filing['filing_date'],
+                        filing_url=new_filing['filing_url'],
+                        status=AnalysisStatus.PENDING.value,
+                    ))
+
+                # 3. 'latest_filings' 테이블의 기준 ID를 가장 최신 공시로 업데이트
+                await db_manager.update_last_filing_info(FilingInfo(
+                    accession_number=new_filings_to_process[0]['accession_number'],
                     ticker=ticker,
-                    filing_type=new_filing['form_type'],
-                    filing_date=new_filing['filing_date'],
-                    filing_url=new_filing['filing_url'],
-                    status=AnalysisStatus.PENDING.value,
-                ))
-
-            # 3. 'latest_filings' 테이블의 기준 ID를 가장 최신 공시로 업데이트
-            await db_manager.update_last_filing_info(FilingInfo(
-                accession_number=new_filings_to_process[0]['accession_number'],
-                ticker=ticker,
-                filing_type=new_filings_to_process[0]['form_type'],
-                filing_date=new_filings_to_process[0]['filing_date'],
-                filing_url=new_filings_to_process[0]['filing_url'],
-                status=AnalysisStatus.PENDING.value
+                    filing_type=new_filings_to_process[0]['form_type'],
+                    filing_date=new_filings_to_process[0]['filing_date'],
+                    filing_url=new_filings_to_process[0]['filing_url'],
+                    status=AnalysisStatus.PENDING.value
+                    )
                 )
+        except Exception as e:
+            logger.error(
+                f"[Discover] {ticker} 처리 중 오류 — 이 티커 건너뜀: {e}",
+                exc_info=True
             )
+            continue  # 다음 티커로
 
 
 async def process_analysis_queue():

@@ -25,7 +25,7 @@ def _load_ticker_cache():
         logger.critical("에러: 처리된 티커 목록 파일이 없습니다. 먼저 update_ticker_list()를 실행하세요.")
         _ticker_cache = None
     except Exception as e:
-        logger.error(f"티커 캐시 로드 중 에러: {e}")
+        logger.error(f"티커 캐시 로드 중 에러: {e}", exc_info=True)
         _ticker_cache = None
 
 
@@ -61,7 +61,7 @@ def _update_ticker_list():
         _ticker_cache = processed_data
 
     except Exception as e:
-        logger.error(f"백그라운드 티커 업데이트 실패: {e}")
+        logger.error(f"백그라운드 티커 업데이트 실패: {e}", exc_info=True)
 
 async def update_ticker_list():
     """

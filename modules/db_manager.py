@@ -229,7 +229,7 @@ async def get_pending_jobs(limit: int) -> list[FilingInfo]:
                 accession_number=row['accession_number'],
                 ticker=row['ticker'],
                 filing_type=row['filing_type'],
-                filing_date=row['filing_date'],
+                filing_date=str(row['filing_date']),  # DATE 컬럼 → datetime.date → str 변환
                 filing_url=row['filing_url'],
                 status=AnalysisStatus.PENDING.value,
             ))

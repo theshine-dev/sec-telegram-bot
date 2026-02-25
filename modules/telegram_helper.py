@@ -78,8 +78,17 @@ async def send_filing_notification_to_users(filing_info: FilingInfo):
             logger.warning(f"[Telegram] {filing_info.ticker} 재요약 후에도 초과 — 강제 절단.")
 
     users_id = await db_manager.get_users_for_ticker(filing_info.ticker)
+    fail_count = 0
     for user_id in users_id:
         try:
             await bot.send_message(chat_id=user_id, text=msg, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
         except Exception as e:
-            logger.error(f"[Telegram] user_id={user_id} 메시지 전송 실패: {e}")
+            fail_count += 1
+            logger.error(f"[Telegram] user_id={user_id} 메시지 전송 실패: {e}", exc_info=True)
+
+    if fail_count > 0:
+        logger.warning(
+            f"[Telegram] {filing_info.ticker} 알림 전송 결과: "
+            f"{len(users_id) - fail_count}/{len(users_id)} 성공, "
+            f"{fail_count}명 실패"
+        )

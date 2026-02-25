@@ -221,7 +221,7 @@ Current analysis:
             return analysis
         return json.loads(match.group(0))
     except Exception as e:
-        logger.error(f"[Gemini] shorten_analysis 실패: {e}")
+        logger.error(f"[Gemini] shorten_analysis 실패: {e}", exc_info=True)
         return analysis  # 실패 시 원본 그대로 반환
 
 

@@ -108,6 +108,11 @@ LOGGING_CONFIG = {
             'handlers': ['console', 'gemini_file_handler'],
             'propagate': False,
         },
+        'modules.telegram_helper': {
+            'level': GLOBAL_LOG_LEVEL,
+            'handlers': ['console', 'bot_file_handler'],
+            'propagate': False,
+        },
         'main': {
             'level': GLOBAL_LOG_LEVEL,
             'handlers': ['console', 'bot_file_handler'],
