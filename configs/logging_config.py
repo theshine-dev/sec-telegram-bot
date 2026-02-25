@@ -1,8 +1,23 @@
 # log_setup.py
 import os
+import datetime
+import logging
 import logging.config
+from zoneinfo import ZoneInfo
 
 from configs.config import LOG_DIR, GLOBAL_LOG_LEVEL
+
+
+_KST = ZoneInfo('Asia/Seoul')
+
+
+class KSTFormatter(logging.Formatter):
+    """로그 타임스탬프를 한국 시간(KST, UTC+9)으로 출력하는 포맷터."""
+    def formatTime(self, record, datefmt=None):
+        dt = datetime.datetime.fromtimestamp(record.created, tz=_KST)
+        if datefmt:
+            return dt.strftime(datefmt)
+        return dt.strftime(self.default_time_format)
 
 
 LOGGING_CONFIG = {
@@ -12,11 +27,13 @@ LOGGING_CONFIG = {
     # 로그 포맷 정의
     'formatters': {
         'default': {
-            'format': '%(asctime)s - %(levelname)s - [%(name)s] - %(message)s',
+            '()': 'configs.logging_config.KSTFormatter',
+            'fmt': '%(asctime)s - %(levelname)s - [%(name)s] - %(message)s',
             'datefmt': '%Y-%m-%d %H:%M:%S',
         },
         'simple': {
-            'format': '%(asctime)s - %(levelname)s - %(message)s',
+            '()': 'configs.logging_config.KSTFormatter',
+            'fmt': '%(asctime)s - %(levelname)s - %(message)s',
         },
     },
 
