@@ -3,9 +3,7 @@ import asyncio
 import logging
 import requests
 
-from edgar import set_identity, Filing, find, use_local_storage
-from edgar.financials import Financials
-from edgar.company_reports import TenK, TenQ, EightK
+from edgar import set_identity, Filing, find, use_local_storage, Company
 
 from configs import config
 from configs.types import FilingInfo, FilingType, ExtractedFilingData
@@ -96,7 +94,7 @@ async def extract_filing_data(filing_info: FilingInfo) -> ExtractedFilingData:
         # 10-K / 10-Q: extract structured data
         if filing_info.filing_type in ["10-K", "10-Q"]:
             # filing.obj()는 네트워크/디스크 I/O가 포함된 동기 호출 → executor 필수
-            filing_obj: TenK | TenQ = await _run_in_executor(lambda: filing.obj())
+            filing_obj = await _run_in_executor(lambda: filing.obj())
 
             if filing_obj.management_discussion:
                 data.mda_text = filing_obj.management_discussion
@@ -104,27 +102,39 @@ async def extract_filing_data(filing_info: FilingInfo) -> ExtractedFilingData:
             if filing_obj.risk_factors:
                 data.risk_factors_text = filing_obj.risk_factors
 
-            # financials API로 재무 데이터 추출 (표준화된 메서드 사용)
+            # 재무 데이터 추출: 공식 권장 Company.get_financials() 사용
+            # filing_obj.financials 는 구버전 클래스로 get_* 메서드 미보장 → 사용 금지
             try:
-                financials = filing_obj.financials
-                if financials:
+                is_annual = filing_info.filing_type == "10-K"
+
+                def _get_company_financials():
+                    co = Company(ticker)
+                    return co.get_financials() if is_annual else co.get_quarterly_financials()
+
+                fin = await _run_in_executor(_get_company_financials)
+
+                if fin:
                     def _extract_financials(fin):
                         result = {}
-                        for key, method in [
+                        # 공식 문서(guides/extract-statements) 기재 메서드만 사용
+                        # getattr로 방어: 메서드 없으면 건너뜀
+                        for key, method_name in [
                             # 손익계산서
-                            ("Revenue",         fin.get_revenue),
-                            ("GrossProfit",     fin.get_gross_profit),
-                            ("OperatingIncome", fin.get_operating_income),
-                            ("NetIncome",       fin.get_net_income),
-                            ("EPS",             fin.get_earnings_per_share),
+                            ("Revenue",           "get_revenue"),
+                            ("GrossProfit",       "get_gross_profit"),
+                            ("OperatingIncome",   "get_operating_income"),
+                            ("NetIncome",         "get_net_income"),
                             # 현금흐름표
-                            ("OperatingCashFlow", fin.get_operating_cash_flow),
-                            ("FreeCashFlow",      fin.get_free_cash_flow),
+                            ("OperatingCashFlow", "get_operating_cash_flow"),
+                            ("FreeCashFlow",      "get_free_cash_flow"),
                             # 재무상태표
-                            ("TotalAssets", fin.get_total_assets),
-                            ("TotalDebt",   fin.get_total_debt),
-                            ("Cash",        fin.get_cash_and_equivalents),
+                            ("TotalAssets",       "get_total_assets"),
+                            ("TotalLiabilities",  "get_total_liabilities"),
                         ]:
+                            method = getattr(fin, method_name, None)
+                            if method is None:
+                                logger.debug(f"[Parser] {method_name} 메서드 없음 (건너뜀)")
+                                continue
                             try:
                                 val = method()
                                 if val is not None:
@@ -133,7 +143,7 @@ async def extract_filing_data(filing_info: FilingInfo) -> ExtractedFilingData:
                                 logger.debug(f"[Parser] {key} 추출 실패 (무시): {e}")
                         return result
 
-                    data.financial_data = await _run_in_executor(lambda: _extract_financials(financials))
+                    data.financial_data = await _run_in_executor(lambda: _extract_financials(fin))
                     logger.info(f"[Parser] {ticker} 재무 데이터 추출 완료: {list(data.financial_data.keys())}")
             except Exception as e:
                 logger.warning(f"[Parser] {ticker} 재무 데이터 추출 실패: {e}", exc_info=True)
@@ -166,7 +176,7 @@ async def get_recent_filings_list(cik):
         loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
             None,  # 기본 스레드 풀 사용
-            lambda: requests.get(url, headers=config.SEC_TICKER_HEADER, timeout=10)
+            lambda: requests.get(url, headers=config.SEC_TICKER_HEADER, timeout=30)
         )
         response.raise_for_status()  # HTTP 에러 체크
 

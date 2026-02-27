@@ -9,7 +9,7 @@ SEC Filing Telegram Bot — monitors SEC EDGAR for new filings (10-K, 10-Q, 8-K)
 ## Commands
 
 ```bash
-# Run locally (requires .env with valid credentials)
+# Run locally (requires ..env with valid credentials)
 python main.py
 
 # Database (PostgreSQL 16)
@@ -17,7 +17,7 @@ docker compose -f docker-compose-postgres.yml up -d
 
 # Build & run with Docker
 docker build -t sec-telegram-bot .
-docker run --env-file .env sec-telegram-bot
+docker run --.env-file ..env sec-telegram-bot
 
 # Import verification (no test suite exists)
 python -c "from modules import db_manager, sec_parser, gemini_helper, telegram_helper, bg_task, ticker_validator"

@@ -62,12 +62,10 @@ def _build_prompt(data: ExtractedFilingData, ticker: str, filing_type: str) -> s
             ("GrossProfit",       "Gross Profit"),
             ("OperatingIncome",   "Operating Income"),
             ("NetIncome",         "Net Income"),
-            ("EPS",               "EPS"),
             ("OperatingCashFlow", "Operating Cash Flow"),
             ("FreeCashFlow",      "Free Cash Flow"),
             ("TotalAssets",       "Total Assets"),
-            ("TotalDebt",         "Total Debt"),
-            ("Cash",              "Cash & Equivalents"),
+            ("TotalLiabilities",  "Total Liabilities"),
         ]
         lines = [f"- {label}: {_format_amount(fd[key])}" for key, label in _FINANCIAL_LABELS if key in fd]
         financial_summary = "\n".join(lines) if lines else "N/A"
