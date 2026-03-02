@@ -116,6 +116,12 @@ async def setup_database():
     async with get_db_connection() as cur:
         await cur.execute(schema_sql)
 
+        # retry_count 컬럼 추가 (기존 테이블에도 안전하게 적용, IF NOT EXISTS로 멱등 보장)
+        await cur.execute("""
+        ALTER TABLE analysis_queue
+            ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0;
+        """)
+
         # 데일리 카운팅 초기 행 삽입
         await cur.execute("""
         INSERT INTO daily_quota_tracker (id, quota_date, request_count)
@@ -194,28 +200,38 @@ async def update_last_filing_info(last_filing: FilingInfo):
 
 
 async def update_analysis_queue(analysis_job: FilingInfo):
-    """ UPSERT analysis queue for ticker into 'analysis_queue' table. """
+    """ UPSERT analysis queue for ticker into 'analysis_queue' table. retry_count 포함. """
     sql = """
-    INSERT INTO analysis_queue (accession_number, ticker, filing_type, filing_date, filing_url, status, last_modified_at) 
-    VALUES (%s, %s, %s, %s, %s, %s, %s)
+    INSERT INTO analysis_queue
+        (accession_number, ticker, filing_type, filing_date, filing_url, status, retry_count, last_modified_at)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
     ON CONFLICT(accession_number) DO UPDATE SET
-    status = excluded.status,
-    last_modified_at = excluded.last_modified_at
+        status           = excluded.status,
+        retry_count      = excluded.retry_count,
+        last_modified_at = excluded.last_modified_at
     """
     async with get_db_connection() as cur:
         await cur.execute(sql,
-                    (analysis_job.accession_number, analysis_job.ticker, analysis_job.filing_type, analysis_job.filing_date,
-                     analysis_job.filing_url, analysis_job.status, datetime.datetime.now(datetime.timezone.utc))
+                    (analysis_job.accession_number, analysis_job.ticker, analysis_job.filing_type,
+                     analysis_job.filing_date, analysis_job.filing_url, analysis_job.status,
+                     int(analysis_job.retry_count),           # 명시적 int 변환으로 타입 안전 보장
+                     datetime.datetime.now(datetime.timezone.utc))
                     )
 
 
 async def get_pending_jobs(limit: int) -> list[FilingInfo]:
-    """ Get a limited number of pending jobs from 'analysis_queue' table. """
+    """
+    PENDING 작업은 즉시, FAILED 작업은 마지막 시도 후 10분이 경과한 건만 가져옵니다.
+    retry_count를 DB에서 읽어 FilingInfo에 주입합니다.
+    """
     jobs: list[FilingInfo] = list()
     sql = """
-            SELECT accession_number, ticker, filing_type, filing_date, filing_url
+            SELECT accession_number, ticker, filing_type, filing_date, filing_url,
+                   status, retry_count
             FROM analysis_queue
             WHERE status = 'PENDING'
+               OR (status = 'FAILED'
+                   AND last_modified_at < NOW() - INTERVAL '10 minutes')
             ORDER BY last_modified_at ASC
             LIMIT %s
             """
@@ -231,7 +247,8 @@ async def get_pending_jobs(limit: int) -> list[FilingInfo]:
                 filing_type=row['filing_type'],
                 filing_date=str(row['filing_date']),  # DATE 컬럼 → datetime.date → str 변환
                 filing_url=row['filing_url'],
-                status=AnalysisStatus.PENDING.value,
+                status=str(row['status']),
+                retry_count=int(row['retry_count']),  # DB 값 명시적 int 변환
             ))
     return jobs
 
@@ -258,6 +275,56 @@ async def insert_analysis_archive(analysis_job: FilingInfo):
                     (analysis_job.accession_number, analysis_job.ticker, analysis_job.filing_type, analysis_job.filing_date,
                      analysis_job.filing_url, gemini_analysis_json, datetime.datetime.now(datetime.timezone.utc))
                     )
+
+
+### 상태 조회 ###
+async def get_queue_status_counts() -> dict:
+    """분석 큐의 상태별 건수를 반환합니다."""
+    sql = """
+    SELECT
+        COUNT(*) FILTER (WHERE status = 'PENDING')       AS pending,
+        COUNT(*) FILTER (WHERE status = 'FAILED')        AS failed,
+        COUNT(*) FILTER (WHERE status = 'PERMANENT_FAIL') AS permanent_fail
+    FROM analysis_queue
+    """
+    async with get_db_connection() as cur:
+        await cur.execute(sql)
+        row = await cur.fetchone()
+        return {
+            'pending':       int(row['pending']       or 0),
+            'failed':        int(row['failed']        or 0),
+            'permanent_fail': int(row['permanent_fail'] or 0),
+        }
+
+
+async def get_latest_archive(ticker: str) -> FilingInfo | None:
+    """analysis_archive에서 특정 티커의 가장 최근 분석 결과를 반환합니다."""
+    sql = """
+    SELECT accession_number, ticker, filing_type, filing_date, filing_url, gemini_analysis
+    FROM analysis_archive
+    WHERE ticker = %s
+    ORDER BY analyzed_at DESC
+    LIMIT 1
+    """
+    async with get_db_connection() as cur:
+        await cur.execute(sql, (ticker.upper(),))
+        row = await cur.fetchone()
+        if not row:
+            return None
+        # psycopg3는 JSONB 컬럼을 자동으로 dict로 역직렬화하지만, 방어적으로 처리
+        gemini_analysis = row['gemini_analysis']
+        if isinstance(gemini_analysis, str):
+            import json as _json
+            gemini_analysis = _json.loads(gemini_analysis)
+        return FilingInfo(
+            accession_number=row['accession_number'],
+            ticker=row['ticker'],
+            filing_type=row['filing_type'],
+            filing_date=str(row['filing_date']),
+            filing_url=row['filing_url'],
+            status=AnalysisStatus.COMPLETED.value,
+            gemini_analysis=gemini_analysis,
+        )
 
 
 ### 할당량 테이블 ###

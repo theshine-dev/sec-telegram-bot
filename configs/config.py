@@ -19,6 +19,7 @@ EDGAR_CACHE_DIR = DATA_DIR / "edgar_cache"
 # Token, CHAT ID
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+ADMIN_CHAT_ID = os.environ.get("ADMIN_CHAT_ID") or TELEGRAM_CHAT_ID
 GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY")
 
 # DB

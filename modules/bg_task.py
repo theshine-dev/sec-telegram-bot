@@ -1,14 +1,23 @@
 # bg_task.py
 from datetime import datetime, timezone
 import logging
+from typing import Optional
 
 from configs import config
-from modules.telegram_helper import send_filing_notification_to_users
+from modules.telegram_helper import send_filing_notification_to_users, send_admin_alert
 from modules import db_manager, gemini_helper, ticker_validator, sec_parser
 
 from configs.types import AnalysisStatus, FilingInfo
 
 logger = logging.getLogger(__name__)
+
+# 마지막 공시 탐색 시각 (KST 기준 /status 명령어용)
+_last_discover_at: Optional[datetime] = None
+
+
+def get_last_discover_at() -> Optional[datetime]:
+    """마지막 discover_new_filings() 실행 시각을 반환합니다."""
+    return _last_discover_at
 
 
 async def _process_single_job(job: FilingInfo):
@@ -43,13 +52,23 @@ async def _process_single_job(job: FilingInfo):
         job.update_gemini_analysis(analysis_result)
         job.update_status(AnalysisStatus.COMPLETED.value)
 
-        # 3. DB 저장 및 Telegram 발송
+        # 3. archive 저장 → 큐 즉시 삭제 (원자적으로 처리)
+        #    순서 보장: archive 확정 후 바로 큐 삭제 → Telegram 실패가 큐 잔류에 영향 없음
         try:
             await db_manager.insert_analysis_archive(job)
-            await send_filing_notification_to_users(job)
             await db_manager.remove_analysis_queue(job)
         except Exception as e:
-            raise RuntimeError(f"[저장/발송 실패] {e}") from e
+            raise RuntimeError(f"[저장 실패] {e}") from e
+
+        # 4. Telegram 발송 (실패해도 분석 성공으로 처리 — 큐는 이미 삭제됨)
+        try:
+            await send_filing_notification_to_users(job)
+        except Exception as e:
+            logger.error(
+                f"[Analyzer] {job.ticker} - {job.accession_number} "
+                f"Telegram 발송 실패 (분석은 완료 처리): {e}",
+                exc_info=True
+            )
 
         logger.info(f"[Analyzer] {job.ticker} - {job.accession_number} 공시 분석 완료 및 사용자 발송 완료.")
 
@@ -62,17 +81,24 @@ async def _process_single_job(job: FilingInfo):
             exc_info=True
         )
 
-        # 실패 시, 재시도 횟수 증가 및 상태 업데이트
+        # retry_count는 DB에서 읽은 값 기반으로 증가 → 재시작해도 카운트 유지
         job.retry_count += 1
         if job.retry_count >= config.MAX_RETRY_LIMIT:
-            # 최대 재시도 횟수 도달 시 '영구 실패'
             job.update_status(AnalysisStatus.PERMANENT_FAIL.value)
             logger.warning(
-                f"[Analyzer] {job.ticker} - {job.accession_number} 최대 재시도({config.MAX_RETRY_LIMIT}) 횟수 도달. 영구 실패로 처리.")
+                f"[Analyzer] {job.ticker} - {job.accession_number} "
+                f"최대 재시도({config.MAX_RETRY_LIMIT}) 횟수 도달. 영구 실패로 처리."
+            )
+            await send_admin_alert(
+                f"⚠️ <b>공시 분석 영구 실패</b>\n"
+                f"티커: <code>{job.ticker}</code>\n"
+                f"공시: <code>{job.accession_number}</code>\n"
+                f"원인: {str(e)[:300]}"
+            )
         else:
-            # 아닐 경우 '실패' (다음 재시도 대기)
             job.update_status(AnalysisStatus.FAILED.value)
 
+        # retry_count 포함해서 DB 업데이트 (다음 실행 시 정확한 시도 횟수 유지)
         await db_manager.update_analysis_queue(job)
 
         return False  # failure indicator
@@ -82,6 +108,8 @@ async def discover_new_filings():
     """
     Find new filings for all subscribed tickers, Update 'analysis_queue', 'latest_filings' tables.
     """
+    global _last_discover_at
+    _last_discover_at = datetime.now(timezone.utc)
     logger.info("[Discover] 새로운 공시 탐색 시작...")
     tickers = await db_manager.get_all_subscribed_tickers()
 
