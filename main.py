@@ -242,9 +242,20 @@ async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # ── Step 5: Gemini 분석 (Gemini 쿼터 카운트 제외) ────────────────
+        # ── Step 5: Gemini 쿼터 확인 후 분석 ────────────────────────────
+        quota   = await db_manager.get_quota_status()
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        used_today = quota['count'] if quota['date'].date() == now_utc.date() else 0
+
+        if used_today >= config.GEMINI_DAILY_LIMIT:
+            await status_msg.edit_text(
+                f"⚠️ [{_TEST_TICKER}] Gemini 일일 쿼터 소진 "
+                f"({used_today}/{config.GEMINI_DAILY_LIMIT}) — 테스트를 실행할 수 없습니다."
+            )
+            return
+
         await status_msg.edit_text(
-            f"🤖 [{_TEST_TICKER}] Gemini 분석 중...\n"
+            f"🤖 [{_TEST_TICKER}] Gemini 분석 중... (쿼터 {used_today}/{config.GEMINI_DAILY_LIMIT})\n"
             f"유형: <code>{html.escape(f_type)}</code>  날짜: <code>{html.escape(f_date)}</code>",
             parse_mode=ParseMode.HTML,
         )
@@ -256,6 +267,9 @@ async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"❌ [{_TEST_TICKER}] Gemini 분석 실패 또는 빈 결과."
             )
             return
+
+        # Gemini 호출 성공 시에만 쿼터 카운트 업데이트
+        await db_manager.update_quota_count(used_today + 1, now_utc)
 
         job.update_gemini_analysis(analysis_result)
 
@@ -318,11 +332,21 @@ async def post_init(app: Application):
         BotCommand("cancel", "진행 중인 입력 취소"),
     ])
 
-    # 관리자 전용 명령어 메뉴 등록 (/test 는 관리자 채팅에서만 표시)
+    # 관리자 채팅 전용 메뉴: 전체 공개 명령어 + /test 추가
+    # (BotCommandScopeChat은 전역 목록을 덮어쓰므로 모든 명령어를 함께 포함해야 함)
     if config.ADMIN_CHAT_ID:
         try:
             await app.bot.set_my_commands(
-                [BotCommand("test", f"파이프라인 전체 테스트 ({_TEST_TICKER})")],
+                [
+                    BotCommand("start",  "봇 소개"),
+                    BotCommand("sub",    "티커 구독 (예: /sub TSLA)"),
+                    BotCommand("unsub",  "티커 구독 취소"),
+                    BotCommand("list",   "구독 목록 확인"),
+                    BotCommand("latest", "최신 공시 분석 조회"),
+                    BotCommand("status", "봇 상태 확인"),
+                    BotCommand("cancel", "진행 중인 입력 취소"),
+                    BotCommand("test",   f"파이프라인 전체 테스트 ({_TEST_TICKER})"),
+                ],
                 scope=BotCommandScopeChat(chat_id=int(config.ADMIN_CHAT_ID)),
             )
         except Exception as e:
