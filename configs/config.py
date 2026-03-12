@@ -32,7 +32,8 @@ ANALYSIS_INTERVAL_SECONDS = int(os.environ.get("ANALYSIS_INTERVAL_SECONDS", 80))
 
 DISCOVER_FILING_AMOUNT = int(os.environ.get("DISCOVER_FILING_AMOUNT", 3))
 
-MAX_RETRY_LIMIT = int(os.environ.get("MAX_RETRY_LIMIT", 3))
+MAX_RETRY_LIMIT = int(os.environ.get("MAX_RETRY_LIMIT", 4))
+LAST_RETRY_INTERVAL_HOURS = int(os.environ.get("LAST_RETRY_INTERVAL_HOURS", 3))
 
 # Gemini Quota
 GEMINI_RPM_LIMIT = int(os.environ.get("GEMINI_RPM_LIMIT", 2))

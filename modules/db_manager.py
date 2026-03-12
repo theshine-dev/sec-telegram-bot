@@ -225,19 +225,24 @@ async def get_pending_jobs(limit: int) -> list[FilingInfo]:
     retry_count를 DB에서 읽어 FilingInfo에 주입합니다.
     """
     jobs: list[FilingInfo] = list()
+    # MAX_RETRY_LIMIT - 1 번째 시도부터는 마지막 재시도로 간주 → 긴 대기 적용
+    last_retry_threshold = config.MAX_RETRY_LIMIT - 1
     sql = """
             SELECT accession_number, ticker, filing_type, filing_date, filing_url,
                    status, retry_count
             FROM analysis_queue
             WHERE status = 'PENDING'
                OR (status = 'FAILED'
-                   AND last_modified_at < NOW() - INTERVAL '10 minutes')
+                   AND (
+                       (retry_count < %s AND last_modified_at < NOW() - INTERVAL '10 minutes')
+                       OR (retry_count >= %s AND last_modified_at < NOW() - make_interval(hours => %s))
+                   ))
             ORDER BY last_modified_at ASC
             LIMIT %s
             """
 
     async with get_db_connection() as cur:
-        await cur.execute(sql, (limit,))
+        await cur.execute(sql, (last_retry_threshold, last_retry_threshold, config.LAST_RETRY_INTERVAL_HOURS, limit,))
         rows = await cur.fetchall()
 
         for row in rows:
